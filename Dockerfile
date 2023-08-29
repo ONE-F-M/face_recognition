@@ -8,7 +8,7 @@ WORKDIR $APPDIR
 
 COPY . $APPDIR
 
-RUN apt-get update && apt-get install -y cmake build-essential libpng-dev
+RUN apt-get update && apt-get install -y cmake build-essential python3-opencv libpng-dev
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
