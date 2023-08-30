@@ -2,5 +2,9 @@
 __pycache__/
 *.pyc
 cred.json
-verify
-enroll
+verify/econding/*
+enroll/econding/*
+verify/images/*
+enroll/images/*
+verify/video/*
+enroll/video/*
