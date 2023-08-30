@@ -68,7 +68,9 @@ class Detector:
 
     def enroll(self, video, filename):
         try:
-            self.generate_images(video, filename, 'enroll')
+            generate_images = self.generate_images(video, filename, 'enroll')
+            if generate_images.get('error'):
+                return generate_images
             # generate pickle file
             encode_face = self.encode_face()
             return encode_face
@@ -77,36 +79,41 @@ class Detector:
 
     def generate_images(self, video, filename, vtype):
         # reverse the string to video stream
-        if vtype=='enroll':
-            self.IMAGEPATH = PATHCONFIG['enroll']['IMAGEPATH']
-            self.VIDEOPATH = PATHCONFIG['enroll']['VIDEOPATH']
-            self.ENCODINGPATH = PATHCONFIG['enroll']['ENCODINGPATH']
-        else:
-            self.IMAGEPATH = PATHCONFIG['verify']['IMAGEPATH']
-            self.VIDEOPATH = PATHCONFIG['verify']['VIDEOPATH']
-            self.ENCODINGPATH = PATHCONFIG['verify']['ENCODINGPATH']
-        
-        video = video.encode('ascii')
-        video = base64.b64decode(video)
-        video_file = self.VIDEOPATH+f"/"+filename
-        with open(video_file, 'wb') as f:
-            f.write(video)
-        cap = cv2.VideoCapture(video_file)
-        success, img = cap.read()
-        count = 0
-        while success:
-            #Resizing the image
-            img = cv2.resize(img, (0, 0), fx=0.5, fy=0.5)
-            #Limiting the number of images for training. %5 gives 10 images %5.8 -> 8 images %6.7 ->7 images
-            if count%5 == 0 :
-                image_file= str(Path(self.IMAGEPATH + f"/{self.username}"))+"/{count}.jpg".format(count=count+1)
-                cv2.imwrite(image_file, img)
-            count = count + 1
-            success, img = cap.read()
+        try:
+            if vtype=='enroll':
+                self.IMAGEPATH = PATHCONFIG['enroll']['IMAGEPATH']
+                self.VIDEOPATH = PATHCONFIG['enroll']['VIDEOPATH']
+                self.ENCODINGPATH = PATHCONFIG['enroll']['ENCODINGPATH']
+            else:
+                self.IMAGEPATH = PATHCONFIG['verify']['IMAGEPATH']
+                self.VIDEOPATH = PATHCONFIG['verify']['VIDEOPATH']
+                self.ENCODINGPATH = PATHCONFIG['verify']['ENCODINGPATH']
             
-        # DELETE VIDEO FILE
-        if os.path.exists(video_file):
-            os.remove(video_file)
+            video = video.encode('ascii')
+            video = base64.b64decode(video)
+            video_file = self.VIDEOPATH+f"/"+filename
+            with open(video_file, 'wb') as f:
+                f.write(video)
+            cap = cv2.VideoCapture(video_file)
+            success, img = cap.read()
+            count = 0
+            while success:
+                #Resizing the image
+                img = cv2.resize(img, (0, 0), fx=0.5, fy=0.5)
+                #Limiting the number of images for training. %5 gives 10 images %5.8 -> 8 images %6.7 ->7 images
+                if count%5 == 0 :
+                    image_file= str(Path(self.IMAGEPATH + f"/{self.username}"))+"/{count}.jpg".format(count=count+1)
+                    cv2.imwrite(image_file, img)
+                count = count + 1
+                success, img = cap.read()
+                
+            # DELETE VIDEO FILE
+            if os.path.exists(video_file):
+                os.remove(video_file)
+
+            return {'error':False, 'message':'Image Genrated.'}
+        except Exception as e:
+            return {'error':True, 'message':e}
 
     def encode_face(self):
         """

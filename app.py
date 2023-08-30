@@ -20,7 +20,6 @@ def bigbang():
 @app.route("/enroll", methods=['POST'])
 def enroll():
     data = request.get_json()
-    # print(data)
     # use detector
     detector = Detector(username=data['username'], bucketpath=data['bucketpath'])
     res = detector.enroll(video=data['video'], filename=data['filename'])
