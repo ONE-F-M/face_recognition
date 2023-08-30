@@ -7,6 +7,8 @@ from google.cloud import storage
 
 
 # Create directories if they don't already exist
+Path("enroll").mkdir(exist_ok=True)
+Path("verify").mkdir(exist_ok=True)
 Path("enroll/images").mkdir(exist_ok=True)
 Path("enroll/video").mkdir(exist_ok=True)
 Path("enroll/encoding").mkdir(exist_ok=True)
