@@ -2,9 +2,3 @@
 __pycache__/
 *.pyc
 cred.json
-verify/enconding/*
-enroll/enconding/*
-verify/images/*
-enroll/images/*
-verify/video/*
-enroll/video/*
