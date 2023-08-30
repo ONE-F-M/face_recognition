@@ -10,6 +10,8 @@ COPY . $APPDIR
 
 RUN apt-get update && apt-get install -y cmake build-essential python3-opencv libpng-dev
 RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+#  Install production dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
-CMD ["python", "app.py"]
+# Single worker with 8 threads, timeout set at 30s
+CMD exec gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 30 app:app
