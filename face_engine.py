@@ -44,7 +44,7 @@ def set_credential(data):
         download_pickles(data['bucketpath'])
         return {'error':False, 'message':'BigBang, Hello World!'}
     except Exception as e:
-        return {'error':True, 'message':e}
+        return {'error':True, 'message':str(e)}
 
 def download_pickles(bucketpath):
     os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'cred.json'
@@ -69,13 +69,11 @@ class Detector:
     def enroll(self, video, filename):
         try:
             generate_images = self.generate_images(video, filename, 'enroll')
-            if generate_images.get('error'):
-                return generate_images
             # generate pickle file
             encode_face = self.encode_face()
             return encode_face
         except Exception as e:
-            return {'error':True, 'message':e}
+            return {'error':True, 'message':str(e)}
 
     def generate_images(self, video, filename, vtype):
         # reverse the string to video stream
@@ -113,7 +111,7 @@ class Detector:
 
             return {'error':False, 'message':'Image Genrated.'}
         except Exception as e:
-            return {'error':True, 'message':e}
+            return {'error':True, 'message':str(e)}
 
     def encode_face(self):
         """
@@ -144,21 +142,27 @@ class Detector:
             if os.path.exists(f"{self.IMAGEPATH}/{self.username}"):
                 shutil.rmtree(f"{self.IMAGEPATH}/{self.username}", ignore_errors=True)
             # SEND FILE TO GCP in face_recognition
-            storage_client = storage.Client()
-            bucket = storage_client.bucket('face_recognition_v3')
-            blobs = storage_client.list_blobs(f'{self.bucketpath}/encoding')
-            blob = bucket.blob(f'{self.bucketpath}/encoding/{self.username}.pkl')
-            with open(encoding_file, 'rb') as f:
-                blob.upload_from_file(f)
-            # DELETE pickle
-            if os.path.isfile(self.ENCODINGPATH+'/'+self.username+'.pkl'):
-                os.remove(self.ENCODINGPATH+'/'+self.username+'.pkl')
+            try:
+                storage_client = storage.Client()
+                bucket = storage_client.bucket('face_recognition_v3')
+                blobs = storage_client.list_blobs(f'{self.bucketpath}/encoding')
+                blob = bucket.blob(f'{self.bucketpath}/encoding/{self.username}.pkl')
+                with open(encoding_file, 'rb') as f:
+                    blob.upload_from_file(f)
+            except Exception as e:
+                print(str(e))
             # check if pickle exist in verify
             if os.path.isfile('verify/encoding/'+self.username+'.pkl'):
                 os.remove('verify/encoding/'+self.username+'.pkl')
+            # manually move the file
+            shutil.copyfile('enroll/encoding/'+self.username+'.pkl', 'verify/encoding/'+self.username+'.pkl')
+            # DELETE pickle
+            if os.path.isfile(self.ENCODINGPATH+'/'+self.username+'.pkl'):
+                os.remove(self.ENCODINGPATH+'/'+self.username+'.pkl')
             return {'error':False, 'message':'success'}
         except Exception as e:
-            return {'error':True, 'message':e}
+            print(str(e), 'error\n\n')
+            return {'error':True, 'message':str(e)}
 
     def verify(self, video, filename):
         """
@@ -203,7 +207,7 @@ class Detector:
             return {'error':False, 'message':'Face Verified.'}
         except Exception as e:
             print(e)
-            return {'error':True, 'message':e}
+            return {'error':True, 'message':str(e)}
 
 
     def _recognize_face(self, unknown_encoding, loaded_encodings):
