@@ -2,3 +2,7 @@
 __pycache__/
 *.pyc
 cred.json
+*.pkl
+*.png
+*.jpg
+*.mp4
