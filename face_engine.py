@@ -195,7 +195,7 @@ class Detector:
                 )
                 for bounding_box, unknown_encoding in zip(
                     input_face_locations, input_face_encodings
-                ):
+                    ):
                     name = self._recognize_face(unknown_encoding, loaded_encodings)
                     if name:
                         found = True
@@ -206,7 +206,6 @@ class Detector:
                 return {'error':True, 'message':'We could not verify your face.', 'text':'We could not verify your face.'}
             return {'error':False, 'message':'Face Verified.'}
         except Exception as e:
-            print(e)
             return {'error':True, 'message':str(e)}
 
 
