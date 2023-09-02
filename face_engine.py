@@ -34,6 +34,8 @@ def set_credential(data):
         We import the credential by sending it here
     """
     try:
+        if os.path.isfile('cred.json'):
+            return {'error':False, 'message':'BigBang, Hello World!'}
         json_object = json.dumps(data['cred'], indent=4)
         
         # Writing to sample.json
