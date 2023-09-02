@@ -185,6 +185,9 @@ class Detector:
 
             # start comparing
             found = False
+            count = 0
+            countT = 0
+            countF = 0
             for filepath in glob.glob(f"{self.IMAGEPATH}/{self.username}/*"):
                 filepath = Path(filepath)
                 input_image = face_recognition.load_image_file(filepath)
@@ -200,7 +203,11 @@ class Detector:
                     ):
                     name = self._recognize_face(unknown_encoding, loaded_encodings)
                     if name:
-                        found = True
+                        countT += 1
+                    count += 1
+            # check if matching is >= 50%
+            if ((countT/count) * 100) >= 50:
+                found = True
             # DELETE IMAGES
             if os.path.exists(f"{self.IMAGEPATH}/{self.username}"):
                 shutil.rmtree(f"{self.IMAGEPATH}/{self.username}", ignore_errors=True)
