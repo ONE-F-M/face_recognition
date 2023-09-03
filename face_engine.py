@@ -206,6 +206,8 @@ class Detector:
                         countT += 1
                     count += 1
             # check if matching is >= 50%
+            if count==0:
+                return {'error':True, 'message':'Face not found.', 'text':'Face not found.'}
             if ((countT/count) * 100) >= 50:
                 found = True
             # DELETE IMAGES
