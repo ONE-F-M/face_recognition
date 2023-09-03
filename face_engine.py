@@ -43,7 +43,7 @@ def set_credential(data):
             outfile.write(json_object)
 
         # get existing pickles
-        download_pickles(data['bucketpath'])
+        # download_pickles(data['bucketpath'])
         return {'error':False, 'message':'BigBang, Hello World!'}
     except Exception as e:
         return {'error':True, 'message':str(e)}
