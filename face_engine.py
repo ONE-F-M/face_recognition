@@ -99,10 +99,12 @@ class Detector:
             cap = cv2.VideoCapture(video_file)
             success, img = cap.read()
             count = 0
+            
             while success:
                 is_face_live = live_face_detector.detect_live_face(img)
-                print(is_face_live, 99999999999999999999999999999999)
-                if is_face_live:
+                
+                # if is_face_live:
+                if 1:
                     # Resizing the image
                     img = cv2.resize(img, (0, 0), fx=0.5, fy=0.5)
 
@@ -111,6 +113,8 @@ class Detector:
                         image_file = str(Path(self.IMAGEPATH + f"/{self.username}")) + "/{count}.jpg".format(
                             count=count + 1)
                         cv2.imwrite(image_file, img)
+                        
+                        
                 count = count + 1
                 success, img = cap.read()
 
@@ -132,6 +136,7 @@ class Detector:
             encodings = []
 
             for filepath in glob.glob(f"{self.IMAGEPATH}/{self.username}/*"):
+                
                 filepath = Path(filepath)
                 name = filepath.parent.name
                 image = face_recognition.load_image_file(filepath)
@@ -166,8 +171,8 @@ class Detector:
             # manually move the file
             shutil.copyfile('enroll/encoding/' + self.username + '.pkl', 'verify/encoding/' + self.username + '.pkl')
             # DELETE pickle
-            if os.path.isfile(self.ENCODINGPATH + '/' + self.username + '.pkl'):
-                os.remove(self.ENCODINGPATH + '/' + self.username + '.pkl')
+            # if os.path.isfile(self.ENCODINGPATH + '/' + self.username + '.pkl'):
+            #     os.remove(self.ENCODINGPATH + '/' + self.username + '.pkl')
             return {'error': False, 'message': 'success'}
         except Exception as e:
             print(str(e), 'error\n\n')
@@ -189,26 +194,33 @@ class Detector:
             #     blob.download_to_filename(self.ENCODINGPATH + f"/{self.username}.pkl")
             with Path(self.ENCODINGPATH + f"/{self.username}.pkl").open(mode="rb") as f:
                 loaded_encodings = pickle.load(f)
-
+            print("\n\n\n")
+            print("LOADED ENCODEINGS")
+            print(self.ENCODINGPATH)
+            print(loaded_encodings)
+            print("\n\n\n")
             # start comparing
             found = False
             count = 0
             countT = 0
             countF = 0
+            
             for filepath in glob.glob(f"{self.IMAGEPATH}/{self.username}/*"):
                 filepath = Path(filepath)
                 input_image = face_recognition.load_image_file(filepath)
-
+                
                 input_face_locations = face_recognition.face_locations(
                     input_image, model="hog"
                 )
                 input_face_encodings = face_recognition.face_encodings(
                     input_image, input_face_locations
                 )
+                
                 for bounding_box, unknown_encoding in zip(
                         input_face_locations, input_face_encodings
                 ):
                     name = self._recognize_face(unknown_encoding, loaded_encodings)
+                    
                     if name:
                         countT += 1
                     count += 1
@@ -277,7 +289,7 @@ class LiveFaceDetector:
     def detect_live_face(self, frame):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         faces = self.face_detector(gray)
-
+        
         for face in faces:
             # Detect facial landmarks
             landmarks = self.landmark_predictor(gray, face)
@@ -296,11 +308,13 @@ class LiveFaceDetector:
 
             # Check for blink
             if avg_ear < self.EYE_AR_THRESH:
+                
                 if self.left_eye_counter >= self.EYE_AR_CONSEC_FRAMES and self.right_eye_counter >= self.EYE_AR_CONSEC_FRAMES:
                     self.total_blinks += 1
                 self.left_eye_counter = 0
                 self.right_eye_counter = 0
             else:
+                
                 self.left_eye_counter += 1
                 self.right_eye_counter += 1
 
