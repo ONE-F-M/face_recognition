@@ -99,6 +99,10 @@ class Detector:
             cap = cv2.VideoCapture(video_file)
             success, img = cap.read()
             count = 0
+            print("\n\n\n\n")
+            print("SUCCESS 01")
+            print(success)
+            print("\n\n\n\n")
             
             while success:
                 is_face_live = live_face_detector.detect_live_face(img)
@@ -107,14 +111,19 @@ class Detector:
                 if 1:
                     # Resizing the image
                     img = cv2.resize(img, (0, 0), fx=0.5, fy=0.5)
-
+                    print("\n\n\n\n")
+                    print(video_file)
+                    print("SUCCESS O")
+                    print("\n\n\n\n")
                     # Limiting the number of images for training. %5 gives 10 images %5.8 -> 8 images %6.7 ->7 images
                     if count % 5 == 0:
                         image_file = str(Path(self.IMAGEPATH + f"/{self.username}")) + "/{count}.jpg".format(
                             count=count + 1)
                         cv2.imwrite(image_file, img)
-                        
-                        
+                        print("\n\n\n\n")
+                        print('WRITE FILE')
+                        print(image_file)
+                        print("\n\n\n\n")
                 count = count + 1
                 success, img = cap.read()
 
@@ -152,9 +161,14 @@ class Detector:
             encoding_file = self.ENCODINGPATH + '/' + self.username + '.pkl'
             with open(encoding_file, mode="wb") as f:
                 pickle.dump(name_encodings, f)
+                print('\n\n\n')
+                print("ENROLLED ENCODING")
+                print(name_encodings)
+                print(encoding_file)
+                print('\n\n\n')
             # DELETE TRAINING IMAGES
-            if os.path.exists(f"{self.IMAGEPATH}/{self.username}"):
-                shutil.rmtree(f"{self.IMAGEPATH}/{self.username}", ignore_errors=True)
+            # if os.path.exists(f"{self.IMAGEPATH}/{self.username}"):
+            #     shutil.rmtree(f"{self.IMAGEPATH}/{self.username}", ignore_errors=True)
             # SEND FILE TO GCP in face_recognition
             # try:
             #     storage_client = storage.Client()
@@ -192,11 +206,14 @@ class Detector:
             #     bucket = storage_client.bucket('face_recognition_v3')
             #     blob = bucket.blob(f'{self.bucketpath}/encoding/{self.username}.pkl')
             #     blob.download_to_filename(self.ENCODINGPATH + f"/{self.username}.pkl")
-            with Path(self.ENCODINGPATH + f"/{self.username}.pkl").open(mode="rb") as f:
+            with Path(PATHCONFIG['enroll']['ENCODINGPATH'] + f"/{self.username}.pkl").open(mode="rb") as f:
                 loaded_encodings = pickle.load(f)
             print("\n\n\n")
             print("LOADED ENCODEINGS")
             print(self.ENCODINGPATH)
+            print(PATHCONFIG['enroll']['ENCODINGPATH'])
+            print(PATHCONFIG['enroll']['ENCODINGPATH'] + f"/{self.username}.pk")
+            print(os.getcwd())
             print(loaded_encodings)
             print("\n\n\n")
             # start comparing
