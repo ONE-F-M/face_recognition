@@ -5,6 +5,9 @@ from pathlib import Path
 from PIL import Image
 import numpy as np
 from google.cloud import storage
+from imutils import face_utils
+
+
 
 # Create directories if they don't already exist
 Path("enroll").mkdir(exist_ok=True)
@@ -29,6 +32,69 @@ PATHCONFIG = {
     }
 }
 
+
+def calculate_EAR(eye):
+    #Eye Aspect Ratio
+    # calculate the vertical distances
+    y1 = dist.euclidean(eye[1], eye[5])
+    y2 = dist.euclidean(eye[2], eye[4])
+  
+    # calculate the horizontal distance
+    x1 = dist.euclidean(eye[0], eye[3])
+  
+    # calculate the EAR
+    EAR = (y1+y2) / x1
+    return EAR
+  
+
+def detect_blinks(video_path):
+    """
+    Detect blinking eyes in a video.
+
+    Args:
+        video_path (str): Path to the video file.
+
+    Returns:
+        int: Total number of blinks detected in the video.
+    """
+    blink_thresh = 0.45
+    succ_frame = 2
+    count_frame = 0
+    total_blinks = 0
+    detector = dlib.get_frontal_face_detector()
+    predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
+    cap = cv2.VideoCapture(video_path)
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = detector(gray)
+        for face in faces:
+            landmarks = predictor(gray, face)
+            shape = face_utils.shape_to_np(landmarks)
+            (L_start, L_end) = face_utils.FACIAL_LANDMARKS_IDXS["left_eye"]
+            (R_start, R_end) = face_utils.FACIAL_LANDMARKS_IDXS['right_eye']
+            lefteye = shape[L_start: L_end]
+            righteye = shape[R_start:R_end]
+  
+            # Calculate the EAR
+            left_EAR = calculate_EAR(lefteye)
+            right_EAR = calculate_EAR(righteye)
+  
+            # Avg of left and right eye EAR
+            avg = (left_EAR + right_EAR) / 2
+            if avg < blink_thresh:
+                count_frame += 1  # incrementing the frame count
+            else:
+                if count_frame >= succ_frame:
+                    total_blinks += 1
+                count_frame = 0
+
+    cap.release()  # Release the video capture object
+    return total_blinks  # Return the total number of blinks
 
 def set_credential(data):
     """
@@ -85,6 +151,7 @@ class Detector:
                 self.IMAGEPATH = PATHCONFIG['enroll']['IMAGEPATH']
                 self.VIDEOPATH = PATHCONFIG['enroll']['VIDEOPATH']
                 self.ENCODINGPATH = PATHCONFIG['enroll']['ENCODINGPATH']
+                
             else:
                 self.IMAGEPATH = PATHCONFIG['verify']['IMAGEPATH']
                 self.VIDEOPATH = PATHCONFIG['verify']['VIDEOPATH']
@@ -99,37 +166,32 @@ class Detector:
             cap = cv2.VideoCapture(video_file)
             success, img = cap.read()
             count = 0
-            print("\n\n\n\n")
-            print("SUCCESS 01")
-            print(success)
-            print("\n\n\n\n")
             
+            number_of_blinks = detect_blinks(video_file)
+            print("\n\n\n")
+            print("NUMBER OF BLINKS")
+            print(number_of_blinks)
+            print("\n\n\n")
             while success:
-                is_face_live = live_face_detector.detect_live_face(img)
-                
+                # is_face_live = live_face_detector.detect_live_face(img)
                 # if is_face_live:
-                if 1:
+                if number_of_blinks:
                     # Resizing the image
                     img = cv2.resize(img, (0, 0), fx=0.5, fy=0.5)
-                    print("\n\n\n\n")
-                    print(video_file)
-                    print("SUCCESS O")
-                    print("\n\n\n\n")
+                    
                     # Limiting the number of images for training. %5 gives 10 images %5.8 -> 8 images %6.7 ->7 images
                     if count % 5 == 0:
                         image_file = str(Path(self.IMAGEPATH + f"/{self.username}")) + "/{count}.jpg".format(
                             count=count + 1)
-                        cv2.imwrite(image_file, img)
-                        print("\n\n\n\n")
-                        print('WRITE FILE')
-                        print(image_file)
-                        print("\n\n\n\n")
+                        cv2.imwrite(image_file, img) 
+                else:
+                    return {'error': True, 'message': "No Blinks Detected In Video"}              
                 count = count + 1
                 success, img = cap.read()
 
             # DELETE VIDEO FILE
-            if os.path.exists(video_file):
-                os.remove(video_file)
+            # if os.path.exists(video_file):
+            #     os.remove(video_file)
 
             return {'error': False, 'message': 'Image Generated.'}
         except Exception as e:
@@ -161,11 +223,7 @@ class Detector:
             encoding_file = self.ENCODINGPATH + '/' + self.username + '.pkl'
             with open(encoding_file, mode="wb") as f:
                 pickle.dump(name_encodings, f)
-                print('\n\n\n')
-                print("ENROLLED ENCODING")
-                print(name_encodings)
-                print(encoding_file)
-                print('\n\n\n')
+                
             # DELETE TRAINING IMAGES
             # if os.path.exists(f"{self.IMAGEPATH}/{self.username}"):
             #     shutil.rmtree(f"{self.IMAGEPATH}/{self.username}", ignore_errors=True)
@@ -208,14 +266,7 @@ class Detector:
             #     blob.download_to_filename(self.ENCODINGPATH + f"/{self.username}.pkl")
             with Path(PATHCONFIG['enroll']['ENCODINGPATH'] + f"/{self.username}.pkl").open(mode="rb") as f:
                 loaded_encodings = pickle.load(f)
-            print("\n\n\n")
-            print("LOADED ENCODEINGS")
-            print(self.ENCODINGPATH)
-            print(PATHCONFIG['enroll']['ENCODINGPATH'])
-            print(PATHCONFIG['enroll']['ENCODINGPATH'] + f"/{self.username}.pk")
-            print(os.getcwd())
-            print(loaded_encodings)
-            print("\n\n\n")
+            
             # start comparing
             found = False
             count = 0
@@ -337,9 +388,17 @@ class LiveFaceDetector:
 
         # Check if there are blinks in consecutive frames
         if self.total_blinks > 0:
+            print("\n\n\n\n")
+            print("TRUEEEE")
+            print("\n\n\n\n")
             return True  # Face is live
+        
         else:
+            print("\n\n\n\n")
+            print("FALSEEE")
+            print("\n\n\n\n")
             return False  # Face is not live
+        
 
 
 # Initialize the LiveFaceDetector
