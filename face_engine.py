@@ -1,9 +1,10 @@
-import argparse, pickle, glob, face_recognition, cv2, json, os, base64, logging, shutil
+import argparse, pickle, glob, face_recognition, cv2, json, os, base64, logging, shutil, uuid
 from collections import Counter
 from pathlib import Path
 from PIL import Image
 import numpy as np
 from google.cloud import storage
+from werkzeug.utils import secure_filename
 
 
 # Create directories if they don't already exist
@@ -235,3 +236,50 @@ class Detector:
         )
         if votes:
             return votes.most_common(1)[0][0]
+
+
+class AntiSpoof:
+    
+    def __init__ (self, video_file):
+        self._video = video_file
+        self._file_name = str(uuid.uuid4()) 
+        Path(f"verify/anti-spoof/").mkdir(exist_ok=True)
+        
+    
+       
+    def verify(self):
+        extension = secure_filename(self._video.filename).rsplit('.', 1)[1].lower()
+        new_name = str(uuid.uuid4()) + f".{extension}"
+        file_path = "verify/anti-spoof/" + new_name
+        
+        with open(file_path, "wb") as new_file:
+            new_file.write(self._video.read())
+            
+        
+        cap = cv2.VideoCapture(file_path)
+        
+        status, prev_frame = cap.read()
+        
+        while status:
+            _, frame = cap.read()            
+            
+            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        
+            gray_prev_frame = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
+
+            # Calculate absolute difference between frames
+            frame_diff = cv2.absdiff(gray_prev_frame, gray_frame)
+
+            # Apply a threshold to identify significant changes
+            _, thresh = cv2.threshold(frame_diff, 30, 255, cv2.THRESH_BINARY)
+
+            # Count non-zero pixels in the thresholded image
+            motion_pixels = cv2.countNonZero(thresh)
+
+            # Check if the number of motion pixels exceeds the threshold
+            os.remove(file_path) if os.path.isfile(file_path) else None
+            print(motion_pixels)
+            if motion_pixels > 50:
+                return True
+            return False
+            
