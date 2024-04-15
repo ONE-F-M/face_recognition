@@ -278,8 +278,7 @@ class AntiSpoof:
 
             # Check if the number of motion pixels exceeds the threshold
             os.remove(file_path) if os.path.isfile(file_path) else None
-            print(motion_pixels)
-            if motion_pixels > 50:
+            if motion_pixels > 1000:
                 return True
             return False
             
