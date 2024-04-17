@@ -6,3 +6,4 @@ cred.json
 *.png
 *.jpg
 *.mp4
+.env

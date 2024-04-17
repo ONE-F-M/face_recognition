@@ -1,8 +1,15 @@
-import json
-from flask import Flask, request, jsonify
-from face_engine import Detector, set_credential
+import json, os
+
+from dotenv import load_dotenv
+from flask import Flask, request, jsonify, abort
+from face_engine import Detector, set_credential, AntiSpoof
+from flask_cors import CORS
+
+
+load_dotenv()
 
 app = Flask(__name__)
+CORS(app, origins=os.getenv('WHITELISTED_URLS', "").split(',')) 
 
 @app.route("/")
 def home():
@@ -32,6 +39,16 @@ def verify():
     # use detector
     detector = Detector(username=data['username'], bucketpath=data['bucketpath'])
     res = detector.verify(video=data['video'], filename=data['filename'])
+    return jsonify(res)
+
+
+@app.route("/anti-spoof", methods=["POST"])
+def verify_spoof():
+    file = request.files.get("video_file")
+    if not file:
+        abort(400, 'Missing Video File')
+    antispoof = AntiSpoof(video_file=file)
+    res = antispoof.verify()
     return jsonify(res)
 
     
