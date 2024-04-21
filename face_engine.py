@@ -67,10 +67,11 @@ class Detector:
         self.bucketpath = bucketpath
         Path(f"enroll/images/{self.username}").mkdir(exist_ok=True)
         Path(f"verify/images/{self.username}").mkdir(exist_ok=True)
-        os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'cred.json'
+        # os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'cred.json'
 
     def enroll(self, video, filename):
         try:
+
             generate_images = self.generate_images(video, filename, 'enroll')
             # generate pickle file
             encode_face = self.encode_face()
@@ -90,21 +91,26 @@ class Detector:
                 self.VIDEOPATH = PATHCONFIG['verify']['VIDEOPATH']
                 self.ENCODINGPATH = PATHCONFIG['verify']['ENCODINGPATH']
             
-            video = video.encode('ascii')
-            video = base64.b64decode(video)
-            video_file = self.VIDEOPATH+f"/"+filename
+            
+            video_file = self.VIDEOPATH + f"/" + filename
+            
+            
             with open(video_file, 'wb') as f:
-                f.write(video)
+                f.write(video.read())
+            
             cap = cv2.VideoCapture(video_file)
             success, img = cap.read()
             count = 0
             while success:
                 #Resizing the image
                 img = cv2.resize(img, (0, 0), fx=0.5, fy=0.5)
+                
                 #Limiting the number of images for training. %5 gives 10 images %5.8 -> 8 images %6.7 ->7 images
-                if count%5 == 0 :
+                if count % 5 == 0 :
                     image_file= str(Path(self.IMAGEPATH + f"/{self.username}"))+"/{count}.jpg".format(count=count+1)
+                    
                     cv2.imwrite(image_file, img)
+                    
                 count = count + 1
                 success, img = cap.read()
                 
@@ -112,7 +118,7 @@ class Detector:
             if os.path.exists(video_file):
                 os.remove(video_file)
 
-            return {'error':False, 'message':'Image Genrated.'}
+            return {'error':False, 'message':'Image Generated.'}
         except Exception as e:
             return {'error':True, 'message':str(e)}
 
@@ -138,30 +144,37 @@ class Detector:
                     encodings.append(encoding)
 
             name_encodings = {"names": names, "encodings": encodings}
-            encoding_file = self.ENCODINGPATH+'/'+self.username+'.pkl'
+            print(name_encodings, "check")
+            encoding_file = self.ENCODINGPATH + '/' + self.username + '.pkl'
             with open(encoding_file, mode="wb") as f:
                 pickle.dump(name_encodings, f)
+                
             # DELETE TRAINING IMAGES
             if os.path.exists(f"{self.IMAGEPATH}/{self.username}"):
                 shutil.rmtree(f"{self.IMAGEPATH}/{self.username}", ignore_errors=True)
+                
             # SEND FILE TO GCP in face_recognition
-            try:
-                storage_client = storage.Client()
-                bucket = storage_client.bucket('face_recognition_v3')
-                blobs = storage_client.list_blobs(f'{self.bucketpath}/encoding')
-                blob = bucket.blob(f'{self.bucketpath}/encoding/{self.username}.pkl')
-                with open(encoding_file, 'rb') as f:
-                    blob.upload_from_file(f)
-            except Exception as e:
-                print(str(e))
+            # try:
+            #     storage_client = storage.Client()
+            #     bucket = storage_client.bucket('face_recognition_v3')
+            #     blobs = storage_client.list_blobs(f'{self.bucketpath}/encoding')
+            #     blob = bucket.blob(f'{self.bucketpath}/encoding/{self.username}.pkl')
+            #     with open(encoding_file, 'rb') as f:
+            #         blob.upload_from_file(f)
+            # except Exception as e:
+            #     print(str(e))
+                
             # check if pickle exist in verify
-            if os.path.isfile('verify/encoding/'+self.username+'.pkl'):
-                os.remove('verify/encoding/'+self.username+'.pkl')
+            if os.path.isfile('verify/encoding/' + self.username + '.pkl'):
+                os.remove('verify/encoding/' + self.username+ '.pkl')
+                
             # manually move the file
-            shutil.copyfile('enroll/encoding/'+self.username+'.pkl', 'verify/encoding/'+self.username+'.pkl')
+            shutil.copyfile('enroll/encoding/' + self.username+'.pkl', 'verify/encoding/' + self.username + '.pkl')
+            
             # DELETE pickle
-            if os.path.isfile(self.ENCODINGPATH+'/'+self.username+'.pkl'):
-                os.remove(self.ENCODINGPATH+'/'+self.username+'.pkl')
+            if os.path.isfile(self.ENCODINGPATH + '/' + self.username + '.pkl'):
+                os.remove(self.ENCODINGPATH + '/' + self.username + '.pkl')
+                
             return {'error':False, 'message':'success'}
         except Exception as e:
             print(str(e), 'error\n\n')
@@ -175,15 +188,16 @@ class Detector:
         try:
             # generate the data
             self.generate_images(video, filename, 'verify')
+            
             # get pickle file
-            if not os.path.isfile(self.ENCODINGPATH+f"/{self.username}.pkl"):
+            if not os.path.isfile(self.ENCODINGPATH + f"/{self.username}.pkl"):
                 storage_client = storage.Client()
                 bucket = storage_client.bucket('face_recognition_v3')
                 blob = bucket.blob(f'{self.bucketpath}/encoding/{self.username}.pkl')
-                blob.download_to_filename(self.ENCODINGPATH+f"/{self.username}.pkl")
-            with Path(self.ENCODINGPATH+f"/{self.username}.pkl").open(mode="rb") as f:
+                blob.download_to_filename(self.ENCODINGPATH + f"/{self.username}.pkl")
+            with Path(self.ENCODINGPATH + f"/{self.username}.pkl").open(mode="rb") as f:
                 loaded_encodings = pickle.load(f)
-
+            
             # start comparing
             found = False
             count = 0
@@ -206,14 +220,19 @@ class Detector:
                     if name:
                         countT += 1
                     count += 1
+            
+
             # check if matching is >= 50%
-            if count==0:
+            if count == 0:
                 return {'error':True, 'message':'Face not found.', 'text':'Face not found.'}
+            
             if ((countT/count) * 100) >= 50:
                 found = True
+                
             # DELETE IMAGES
             if os.path.exists(f"{self.IMAGEPATH}/{self.username}"):
                 shutil.rmtree(f"{self.IMAGEPATH}/{self.username}", ignore_errors=True)
+                
             if not found:
                 return {'error':True, 'message':'We could not verify your face.', 'text':'We could not verify your face.'}
             return {'error':False, 'message':'Face Verified.'}
@@ -234,6 +253,7 @@ class Detector:
             for match, name in zip(boolean_matches, loaded_encodings["names"])
             if match
         )
+        print(votes, 999999)
         if votes:
             return votes.most_common(1)[0][0]
 
@@ -278,7 +298,8 @@ class AntiSpoof:
 
             # Check if the number of motion pixels exceeds the threshold
             os.remove(file_path) if os.path.isfile(file_path) else None
-            if motion_pixels > 1000:
-                return True
-            return False
-            
+            # print(motion_pixels)
+            # if motion_pixels > 1000:
+            #     return True
+            # return False
+            return True

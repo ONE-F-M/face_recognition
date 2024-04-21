@@ -26,20 +26,30 @@ def bigbang():
 
 @app.route("/enroll", methods=['POST'])
 def enroll():
-    data = request.get_json()
+    data = request.form.to_dict()
+    video = request.files.get("video_file")
+
     # use detector
     detector = Detector(username=data['username'], bucketpath=data['bucketpath'])
-    res = detector.enroll(video=data['video'], filename=data['filename'])
-    return jsonify(res)
+    res = detector.enroll(video=video, filename=data['filename'])
+    if res.get("error"):
+        abort(400, res.get("message"))
+    else:
+        return jsonify(res)
 
 @app.route("/verify", methods=['POST'])
 def verify():
-    data = request.get_json()
+    data = request.form.to_dict()
+    video = request.files.get("video_file")
+    
     # print(data)
     # use detector
     detector = Detector(username=data['username'], bucketpath=data['bucketpath'])
-    res = detector.verify(video=data['video'], filename=data['filename'])
-    return jsonify(res)
+    res = detector.verify(video=video, filename=data['filename'])
+    if res.get("error"):
+        abort(400, res.get("message"))
+    else:
+        return jsonify(res)
 
 
 @app.route("/anti-spoof", methods=["POST"])
