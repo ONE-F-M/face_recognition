@@ -1,18 +1,29 @@
 import json, os
 
 from dotenv import load_dotenv
-from flask import Flask, request, jsonify, abort
-from face_engine import Detector, set_credential, AntiSpoof
+from flasgger import Swagger
+from flask import Flask, request, jsonify
+from face_engine import Detector, set_credential, FaceRecognition
 from flask_cors import CORS
+# from flask_restplus import Api, Resource
 
 
 load_dotenv()
 
 app = Flask(__name__)
+swagger = Swagger(app)
 CORS(app, origins=os.getenv('WHITELISTED_URLS', "").split(',')) 
 
 @app.route("/")
 def home():
+    """Home Endpoint.
+    ---
+    responses:
+      200:
+        description: "Hello, World!"
+
+    """
+    
     return "Hello, World!"
 
 @app.route('/bigbang', methods=['POST'])
@@ -24,43 +35,98 @@ def bigbang():
         return jsonify({'error':True, 'message':'Blackhole, Dead Star.'})
     return jsonify(set_credential(data))
 
+
 @app.route("/enroll", methods=['POST'])
 def enroll():
+    """Enrollment Endpoint
+    This is used to enroll the user (Request should be sent as form-data).
+    ---
+    parameters:
+      - name: username
+        type: string
+        required: true
+        
+      - name: filename
+        type: string
+        required: true
+        
+      - name: bucketpath
+        type: string
+        required: true
+        
+      - name: video_file
+        type: file
+        required: true
+        
+    definitions:
+      enroll:
+        type: object
+        properties:
+          error:
+            type: boolean
+          message:
+            type: string
+  
+    responses:
+      200:
+        schema:
+          $ref: '#/definitions/enroll'
+    """
     data = request.form.to_dict()
     video = request.files.get("video_file")
+    face_recogniton = FaceRecognition(username=data["username"], bucketpath=data["bucketpath"],
+                                      the_type="enroll", filename=data["filename"], video=video)
+    error, message = face_recogniton.enroll()
+    return dict(error=error, message=message)
+    
 
-    # use detector
-    detector = Detector(username=data['username'], bucketpath=data['bucketpath'])
-    res = detector.enroll(video=video, filename=data['filename'])
-    if res.get("error"):
-        abort(400, res.get("message"))
-    else:
-        return jsonify(res)
 
 @app.route("/verify", methods=['POST'])
 def verify():
+    """Verification Endpoint
+    This is used to verify the user (Request should be sent as form-data).
+    ---
+    parameters:
+      - name: username
+        type: string
+        required: true
+        
+      - name: filename
+        type: string
+        required: true
+        
+      - name: bucketpath
+        type: string
+        required: true
+        
+      - name: video_file
+        type: file
+        required: true
+    
+    definitions:
+      verification:
+        type: object
+        properties:
+          error:
+            type: boolean
+          message:
+            type: string
+  
+    responses:
+      200:
+        schema:
+          $ref: '#/definitions/verification'
+
+    """
     data = request.form.to_dict()
     video = request.files.get("video_file")
-    
-    # print(data)
-    # use detector
-    detector = Detector(username=data['username'], bucketpath=data['bucketpath'])
-    res = detector.verify(video=video, filename=data['filename'])
-    if res.get("error"):
-        abort(400, res.get("message"))
-    else:
-        return jsonify(res)
 
+    face_recogniton = FaceRecognition(username=data["username"], bucketpath=data["bucketpath"],
+                                        the_type="verify", filename=data["filename"], video=video)
+    error, message = face_recogniton.verify()
+    return dict(error=error, message=message)
 
-@app.route("/anti-spoof", methods=["POST"])
-def verify_spoof():
-    file = request.files.get("video_file")
-    if not file:
-        abort(400, 'Missing Video File')
-    antispoof = AntiSpoof(video_file=file)
-    res = antispoof.verify()
-    return jsonify(res)
 
     
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=os.getenv('DEBUG', True))
