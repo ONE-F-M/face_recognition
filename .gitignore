@@ -7,3 +7,4 @@ cred.json
 *.jpg
 *.mp4
 .env
+.idea
