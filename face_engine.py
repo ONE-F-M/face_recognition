@@ -375,7 +375,6 @@ class AntiSpoof:
                             TOTAL += 1
                         COUNTER = 0
                         
-
                 if TOTAL >= num_blinks_required:
                     return True, ""
                 
@@ -390,8 +389,8 @@ class AntiSpoof:
 
 class FaceRecognition:
 
-    def __init__(self, username: str, bucketpath: str, the_type: str, filename: str, video) -> None:
-        self._bucketpath = bucketpath
+    def __init__(self, username: str, the_type: str, filename: str, video) -> None:
+        self._bucketpath = os.getenv("BUCKETPATH", "face_recognition_v3/testing/encoding")
         self._video = video
         self._username = username
         self._type = the_type
@@ -467,9 +466,9 @@ class FaceRecognition:
             os.remove(video_path) if os.path.exists(video_path) else None
 
             self.save_faces_to_pickle(images_dir=str(output_dir))
-            return True, "Enrollment Successful"
+            return False, "Enrollment Successful"
         except Exception as e:
-            return False, str(e)
+            return True, str(e)
 
 
     def save_faces_to_pickle(self, images_dir):
@@ -485,15 +484,15 @@ class FaceRecognition:
             pickle.dump(faces, new_file)
 
         # SEND FILE TO GCP in face_recognition
-        # try:
-        #     storage_client = storage.Client()
-        #     bucket = storage_client.bucket('face_recognition_v3')
-        #     blobs = storage_client.list_blobs(f'{self._bucketpath}/encoding')
-        #     blob = bucket.blob(f'{self._bucketpath}/encoding/{self.username}.pkl')
-        #     with open(pickle_file_path, 'rb') as f:
-        #         blob.upload_from_file(f)
-        # except Exception as e:
-        #     print(str(e))
+        try:
+            storage_client = storage.Client()
+            bucket = storage_client.bucket('face_recognition_v3')
+            blobs = storage_client.list_blobs(f'{self._bucketpath}/encoding')
+            blob = bucket.blob(f'{self._bucketpath}/encoding/{self._username}.pkl')
+            with open(pickle_file_path, 'rb') as f:
+                blob.upload_from_file(f)
+        except Exception as e:
+            print(str(e))
 
         # DELETE TRAINING IMAGES
         shutil.rmtree(images_dir, ignore_errors=True) if os.path.exists(images_dir) else None
@@ -523,12 +522,12 @@ class FaceRecognition:
             cap = cv2.VideoCapture(video_path)
 
             # Load enrolled faces from pickle file
-            # if not os.path.isfile(self.ENCODINGPATH + f"/{self._username}.pkl"):
-            #     # Download pickle file if not available locally
-            #     storage_client = storage.Client()
-            #     bucket = storage_client.bucket('face_recognition_v3')
-            #     blob = bucket.blob(f'{self._bucketpath}/encoding/{self._username}.pkl')
-            #     blob.download_to_filename(self.ENCODINGPATH + f"/{self._username}.pkl")
+            if not os.path.isfile(self.ENCODINGPATH + f"/{self._username}.pkl"):
+                # Download pickle file if not available locally
+                storage_client = storage.Client()
+                bucket = storage_client.bucket('face_recognition_v3')
+                blob = bucket.blob(f'{self._bucketpath}/encoding/{self._username}.pkl')
+                blob.download_to_filename(self.ENCODINGPATH + f"/{self._username}.pkl")
 
             with open(self.ENCODINGPATH + f"/{self._username}.pkl", 'rb') as f:
                 enrolled_faces = pickle.load(f)

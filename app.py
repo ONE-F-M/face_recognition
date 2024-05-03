@@ -50,10 +50,6 @@ def enroll():
         type: string
         required: true
         
-      - name: bucketpath
-        type: string
-        required: true
-        
       - name: video_file
         type: file
         required: true
@@ -74,8 +70,7 @@ def enroll():
     """
     data = request.form.to_dict()
     video = request.files.get("video_file")
-    face_recogniton = FaceRecognition(username=data["username"], bucketpath=data["bucketpath"],
-                                      the_type="enroll", filename=data["filename"], video=video)
+    face_recogniton = FaceRecognition(username=data["username"], the_type="enroll", filename=data["filename"], video=video)
     error, message = face_recogniton.enroll()
     return dict(error=error, message=message)
     
@@ -92,10 +87,6 @@ def verify():
         required: true
         
       - name: filename
-        type: string
-        required: true
-        
-      - name: bucketpath
         type: string
         required: true
         
@@ -120,9 +111,7 @@ def verify():
     """
     data = request.form.to_dict()
     video = request.files.get("video_file")
-
-    face_recogniton = FaceRecognition(username=data["username"], bucketpath=data["bucketpath"],
-                                        the_type="verify", filename=data["filename"], video=video)
+    face_recogniton = FaceRecognition(username=data["username"], the_type="verify", filename=data["filename"], video=video)
     error, message = face_recogniton.verify()
     return dict(error=error, message=message)
 
