@@ -398,7 +398,7 @@ class FaceRecognition:
         self._face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
         Path(f"enroll/images/{self._username}").mkdir(exist_ok=True)
         Path(f"verify/images/{self._username}").mkdir(exist_ok=True)
-        os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = os.getenv('GOOGLE_CREDENTIALS')
+        os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = "cred.json"
 
     def get_path(self) -> None:
         if self._type == 'enroll':
