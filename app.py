@@ -5,7 +5,7 @@ from flasgger import Swagger
 from flask import Flask, request, jsonify
 from face_engine import Detector, set_credential, FaceRecognition
 from flask_cors import CORS
-# from flask_restplus import Api, Resource
+
 
 
 load_dotenv()
@@ -13,6 +13,12 @@ load_dotenv()
 app = Flask(__name__)
 swagger = Swagger(app)
 CORS(app, origins=os.getenv('WHITELISTED_URLS', "").split(',')) 
+
+
+if all((not os.path.isfile("cred.json"), os.getenv("GOOGLE_CREDENTIALS", ""))):
+    with open("cred.json", "w") as new_file:
+      new_file.write(os.getenv("GOOGLE_CREDENTIALS"))
+      
 
 @app.route("/")
 def home():
