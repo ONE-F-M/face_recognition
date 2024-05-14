@@ -8,6 +8,7 @@ from google.cloud import storage
 from werkzeug.utils import secure_filename
 import dlib
 from scipy.spatial import distance as dist
+from traceback import format_exc
 
 # Create directories if they don't already exist
 Path("enroll").mkdir(exist_ok=True)
@@ -468,7 +469,7 @@ class FaceRecognition:
             self.save_faces_to_pickle(images_dir=str(output_dir))
             return False, "Enrollment Successful"
         except Exception as e:
-            return True, str(e)
+            return True, f"{str(format_exc())} -- {str(e)}"
 
 
     def save_faces_to_pickle(self, images_dir):
@@ -492,7 +493,7 @@ class FaceRecognition:
             with open(pickle_file_path, 'rb') as f:
                 blob.upload_from_file(f)
         except Exception as e:
-            print(str(e))
+            print(f"{str(format_exc())} -- {str(e)}")
 
         # DELETE TRAINING IMAGES
         shutil.rmtree(images_dir, ignore_errors=True) if os.path.exists(images_dir) else None
@@ -590,7 +591,7 @@ class FaceRecognition:
             return True, "Face Verification Failed"
             
         except Exception as e:
-            return True, str(e)
+            return True, f"{str(format_exc())} -- {str(e)}"
         
     
     @staticmethod
@@ -599,5 +600,5 @@ class FaceRecognition:
             anti_spoof = AntiSpoof(file_path=file_path)
             return anti_spoof.verify()
         except Exception as e:
-            return True, str(e)
+            return True, f"{str(format_exc())} -- {str(e)}" 
             
