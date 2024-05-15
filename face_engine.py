@@ -252,69 +252,72 @@ class AntiSpoof:
     
     
     def verify(self):
-        status, message, cap = self.detect_liveliness()
+        status, message, cap, traceback = self.detect_liveliness()
         if not status:
-            return status, message
+            return status, message, traceback
         
-        status, message = self.detect_blinks(cap=cap)
+        status, message, traceback = self.detect_blinks(cap=cap)
         if not status:
-            return status, message
+            return status, message, traceback
         
-        return True, ""
+        return True, "", ""
         
             
     def detect_liveliness(self):
-        # Initialize video capture
-        
-        cap = cv2.VideoCapture(self._file_path)
-
-        # Initialize frame counter
-        frame_counter = 0
-
-        # Initialize variables for motion detection
-        prev_frame = None
-
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-
-            # Convert frame to grayscale for face detection
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-            # Detect faces in the frame
-            faces = self._face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
-
-            # Check if faces are detected
-            if len(faces) < 1:
-                # Face detected, liveliness check passed
-                return False, "Oops! We could not detect a real face. Looks like your face decided to play hide and seek with the camera! 🙈", object()
-
-            # Check for motion
-            if prev_frame is not None:
-                diff_frame = cv2.absdiff(prev_frame, gray)
-                _, thresh_frame = cv2.threshold(diff_frame, 20, 255, cv2.THRESH_BINARY)
-                contours, _ = cv2.findContours(thresh_frame.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-                for contour in contours:
-                    if cv2.contourArea(contour) > 100:
-                        return True, "", cap
-
-            # Update previous frame
-            prev_frame = gray
-
-            # Increment frame counter
-            frame_counter += 1
-
-            # Break loop if enough frames have been analyzed
-            if frame_counter >= 100:
-                return False, "Whoops! It seems you've triggered our spoof alert radar! Please ensure that your face is moving or check your camera. 🤖", object()
+        try:
+            # Initialize video capture
             
-        # Release video capture
-        cap.release()
-        cv2.destroyAllWindows()
+            cap = cv2.VideoCapture(self._file_path)
 
-        return False, "Whoops! It seems you've triggered our spoof alert radar! Please ensure that your face is moving or check your camera. 🤖", object()
+            # Initialize frame counter
+            frame_counter = 0
+
+            # Initialize variables for motion detection
+            prev_frame = None
+
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                # Convert frame to grayscale for face detection
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+                # Detect faces in the frame
+                faces = self._face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+
+                # Check if faces are detected
+                if len(faces) < 1:
+                    # Face detected, liveliness check passed
+                    return False, "Oops! We could not detect a real face. Looks like your face decided to play hide and seek with the camera! 🙈", object(), ""
+
+                # Check for motion
+                if prev_frame is not None:
+                    diff_frame = cv2.absdiff(prev_frame, gray)
+                    _, thresh_frame = cv2.threshold(diff_frame, 20, 255, cv2.THRESH_BINARY)
+                    contours, _ = cv2.findContours(thresh_frame.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+                    for contour in contours:
+                        if cv2.contourArea(contour) > 100:
+                            return True, "", cap, ""
+
+                # Update previous frame
+                prev_frame = gray
+
+                # Increment frame counter
+                frame_counter += 1
+
+                # Break loop if enough frames have been analyzed
+                if frame_counter >= 100:
+                    return False, "Whoops! It seems you've triggered our spoof alert radar! Please ensure that your face is moving or check your camera. 🤖", object(), ""
+                
+            # Release video capture
+            cap.release()
+            cv2.destroyAllWindows()
+
+            return False, "Whoops! It seems you've triggered our spoof alert radar! Please ensure that your face is moving or check your camera. 🤖", object(), ""
+        except Exception as e:
+            return False, str(e), object(), str(format_exc)
     
     
     def eye_aspect_ratio(self, eye):
@@ -377,14 +380,14 @@ class AntiSpoof:
                         COUNTER = 0
                         
                 if TOTAL >= num_blinks_required:
-                    return True, ""
+                    return True, "", ""
                 
             cap.release()
             cv2.destroyAllWindows()
 
-            return False, "Uh-oh! Blink and you'll miss it! Try blinking a bit more next time. 😉"
+            return False, "Uh-oh! Blink and you'll miss it! Try blinking a bit more next time. 😉", ""
         except Exception as e:
-            return False, str(e)
+            return False, str(e), f"{format_exc()}"
 
 
 
@@ -432,10 +435,10 @@ class FaceRecognition:
             self.get_path()
             video_path = self.save_video()
             
-            status, message = self.anti_spoof_liveliness(file_path=video_path)
+            status, message, traceback = self.anti_spoof_liveliness(file_path=video_path)
             if not status:
                 os.remove(video_path) if os.path.isfile(video_path) else None
-                return True, message     
+                return True, message, traceback   
 
             cap = cv2.VideoCapture(video_path)
             count = 0
@@ -467,9 +470,9 @@ class FaceRecognition:
             os.remove(video_path) if os.path.exists(video_path) else None
 
             self.save_faces_to_pickle(images_dir=str(output_dir))
-            return False, "Enrollment Successful"
+            return False, "Enrollment Successful", ""
         except Exception as e:
-            return True, f"{str(format_exc())} -- {str(e)}"
+            return True, str(e), f"{format_exc()}"
 
 
     def save_faces_to_pickle(self, images_dir):
@@ -515,10 +518,10 @@ class FaceRecognition:
             self.get_path()
             video_path = self.save_video()
             
-            status, message = self.anti_spoof_liveliness(file_path=video_path)
+            status, message, traceback = self.anti_spoof_liveliness(file_path=video_path)
             if not status:
                 os.remove(video_path) if os.path.isfile(video_path) else None
-                return True, message            
+                return True, message, traceback         
 
             cap = cv2.VideoCapture(video_path)
 
@@ -583,15 +586,15 @@ class FaceRecognition:
                 f"{self.IMAGEPATH}/{self._username}") else None
             
             if unrecognized >= 50:
-                return True, "Face Verification Failed"
+                return True, "Face Verification Failed", ""
             
             if recognized > unrecognized:
-                return False, "Face verification Successful"
+                return False, "Face verification Successful", ""
 
-            return True, "Face Verification Failed"
+            return True, "Face Verification Failed", ""
             
         except Exception as e:
-            return True, f"{str(format_exc())} -- {str(e)}"
+           return True, str(e), f"{format_exc()}"
         
     
     @staticmethod
@@ -600,5 +603,5 @@ class FaceRecognition:
             anti_spoof = AntiSpoof(file_path=file_path)
             return anti_spoof.verify()
         except Exception as e:
-            return True, f"{str(format_exc())} -- {str(e)}" 
+            return True, str(e), f"{format_exc()}"
             
