@@ -77,8 +77,8 @@ def enroll():
     data = request.form.to_dict()
     video = request.files.get("video_file")
     face_recogniton = FaceRecognition(username=data["username"], the_type="enroll", filename=data["filename"], video=video)
-    error, message = face_recogniton.enroll()
-    return dict(error=error, message=message)
+    error, message , traceback= face_recogniton.enroll()
+    return dict(error=error, message=message, traceback=traceback)
     
 
 
@@ -118,8 +118,8 @@ def verify():
     data = request.form.to_dict()
     video = request.files.get("video_file")
     face_recogniton = FaceRecognition(username=data["username"], the_type="verify", filename=data["filename"], video=video)
-    error, message = face_recogniton.verify()
-    return dict(error=error, message=message)
+    error, message, traceback = face_recogniton.verify()
+    return dict(error=error, message=message, traceback=traceback)
 
 
     
