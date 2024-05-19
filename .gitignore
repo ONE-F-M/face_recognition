@@ -8,3 +8,4 @@ cred.json
 *.mp4
 .env
 .idea
+*.bz2
