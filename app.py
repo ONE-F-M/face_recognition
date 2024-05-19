@@ -15,6 +15,7 @@ swagger = Swagger(app)
 CORS(app, origins=os.getenv('WHITELISTED_URLS', "").split(',')) 
 
 
+
 if all((not os.path.isfile("cred.json"), os.getenv("GOOGLE_CREDENTIALS", ""))):
     with open("cred.json", "w") as new_file:
       new_file.write(os.getenv("GOOGLE_CREDENTIALS"))
