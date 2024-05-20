@@ -1,0 +1,11 @@
+.DS_Store
+__pycache__/
+*.pyc
+cred.json
+*.pkl
+*.png
+*.jpg
+*.mp4
+.env
+.idea
+*.bz2
