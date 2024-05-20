@@ -249,24 +249,24 @@ class AntiSpoof:
         self._face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
         self._file_path = file_path
         Path(f"verify/anti-spoof/").mkdir(exist_ok=True)
-    
-    
+
+
     def verify(self):
         status, message, cap, traceback = self.detect_liveliness()
         if not status:
             return status, message, traceback
-        
+
         status, message, traceback = self.detect_blinks(cap=cap)
         if not status:
             return status, message, traceback
-        
+
         return True, "", ""
-        
-            
+
+
     def detect_liveliness(self):
         try:
             # Initialize video capture
-            
+
             cap = cv2.VideoCapture(self._file_path)
 
             # Initialize frame counter
@@ -310,7 +310,7 @@ class AntiSpoof:
                 # Break loop if enough frames have been analyzed
                 if frame_counter >= 100:
                     return False, "Whoops! It seems you've triggered our spoof alert radar! Please ensure that your face is moving or check your camera. 🤖", object(), ""
-                
+
             # Release video capture
             cap.release()
             cv2.destroyAllWindows()
@@ -318,8 +318,8 @@ class AntiSpoof:
             return False, "Whoops! It seems you've triggered our spoof alert radar! Please ensure that your face is moving or check your camera. 🤖", object(), ""
         except Exception as e:
             return False, str(e), object(), str(format_exc)
-    
-    
+
+
     def eye_aspect_ratio(self, eye):
         # Compute the euclidean distances between the two sets of
         # vertical eye landmarks (x, y)-coordinates
@@ -335,7 +335,7 @@ class AntiSpoof:
 
         # Return the eye aspect ratio
         return ear
-    
+
 
     def detect_blinks(self, cap, num_blinks_required: int = 2):
         try:
@@ -371,17 +371,17 @@ class AntiSpoof:
                     right_ear = self.eye_aspect_ratio(right_eye)
 
                     ear = (left_ear + right_ear) / 2.0
-                   
+
                     if ear < EYE_AR_THRESH:
                         COUNTER += 1
                     else:
                         if COUNTER >= EYE_AR_CONSEC_FRAMES:
                             TOTAL += 1
                         COUNTER = 0
-                        
+
                 if TOTAL >= num_blinks_required:
                     return True, "", ""
-                
+
             cap.release()
             cv2.destroyAllWindows()
 
@@ -434,11 +434,10 @@ class FaceRecognition:
         try:
             self.get_path()
             video_path = self.save_video()
-            
             status, message, traceback = self.anti_spoof_liveliness(file_path=video_path)
             if not status:
                 os.remove(video_path) if os.path.isfile(video_path) else None
-                return True, message, traceback   
+                return True, message, traceback
 
             cap = cv2.VideoCapture(video_path)
             count = 0
@@ -456,7 +455,7 @@ class FaceRecognition:
 
                 for (x, y, w, h) in faces:
                     # Save the face region as an image
-                    
+
                     image_file = str(output_dir) + "/{count}.jpg".format(count=count + 1)
 
                     face_image = frame[y:y + h, x:x + w]
@@ -488,15 +487,13 @@ class FaceRecognition:
             pickle.dump(faces, new_file)
 
         # SEND FILE TO GCP in face_recognition
-        try:
-            storage_client = storage.Client()
-            bucket = storage_client.bucket('face_recognition_v3')
-            blobs = storage_client.list_blobs(f'{self._bucketpath}/encoding')
-            blob = bucket.blob(f'{self._bucketpath}/encoding/{self._username}.pkl')
-            with open(pickle_file_path, 'rb') as f:
-                blob.upload_from_file(f)
-        except Exception as e:
-            print(f"{str(format_exc())} -- {str(e)}")
+        storage_client = storage.Client()
+        bucket = storage_client.bucket('face_recognition_v3')
+        blobs = storage_client.list_blobs(f'{self._bucketpath}/encoding')
+        blob = bucket.blob(f'{self._bucketpath}/encoding/{self._username}.pkl')
+        with open(pickle_file_path, 'rb') as f:
+            blob.upload_from_file(f)
+
 
         # DELETE TRAINING IMAGES
         shutil.rmtree(images_dir, ignore_errors=True) if os.path.exists(images_dir) else None
@@ -511,17 +508,17 @@ class FaceRecognition:
         # DELETE pickle
         os.remove(self.ENCODINGPATH + '/' + self._username + '.pkl') if os.path.isfile(
             self.ENCODINGPATH + '/' + self._username + '.pkl') else None
-        
+
 
     def verify(self):
         try:
             self.get_path()
             video_path = self.save_video()
-            
+
             status, message, traceback = self.anti_spoof_liveliness(file_path=video_path)
             if not status:
                 os.remove(video_path) if os.path.isfile(video_path) else None
-                return True, message, traceback         
+                return True, message, traceback
 
             cap = cv2.VideoCapture(video_path)
 
@@ -584,19 +581,19 @@ class FaceRecognition:
             os.remove(video_path) if os.path.isfile(video_path) else None
             shutil.rmtree(f"{self.IMAGEPATH}/{self._username}", ignore_errors=True) if os.path.exists(
                 f"{self.IMAGEPATH}/{self._username}") else None
-            
+
             if unrecognized >= 50:
                 return True, "Face Verification Failed", ""
-            
+
             if recognized > unrecognized:
                 return False, "Face verification Successful", ""
 
             return True, "Face Verification Failed", ""
-            
+
         except Exception as e:
            return True, str(e), f"{format_exc()}"
-        
-    
+
+
     @staticmethod
     def anti_spoof_liveliness(file_path: str):
         try:
@@ -604,4 +601,3 @@ class FaceRecognition:
             return anti_spoof.verify()
         except Exception as e:
             return True, str(e), f"{format_exc()}"
-            
