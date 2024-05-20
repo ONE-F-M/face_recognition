@@ -11,10 +11,7 @@ COPY . $APPDIR
 RUN apt-get update && apt-get install -y cmake build-essential python3-opencv libpng-dev wget bzip2
 
 # Download the shape_predictor_68_face_landmarks.dat.bz2 file
-RUN wget http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2
-
-# Extract the .bz2 file
-RUN bzip2 -d shape_predictor_68_face_landmarks.dat.bz2
+RUN wget https://github.com/italojs/facial-landmarks-recognition/raw/master/shape_predictor_68_face_landmarks.dat
 
 RUN pip install --upgrade pip
 
