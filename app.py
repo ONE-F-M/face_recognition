@@ -8,7 +8,6 @@ from .face_engine import Detector, set_credential, FaceRecognition
 from flask_cors import CORS
 
 
-
 load_dotenv()
 
 app = Flask(__name__)
