@@ -123,7 +123,28 @@ def verify():
     error, message, traceback = face_recogniton.verify()
     return dict(error=error, message=message, traceback=traceback)
 
+@app.route('/shape-model-download', methods=['GET'])
+def download_file():
+    try:
+        save_path = os.path.join(os.getcwd(), 'shape_predictor_68_face_landmarks.dat')
+        if not os.path.isfile(save_path):
+          response = requests.get('https://github.com/italojs/facial-landmarks-recognition/raw/master/shape_predictor_68_face_landmarks.dat', stream=True)
 
+          compressed_file_path = os.path.join(os.getcwd(), 'shape_predictor_68_face_landmarks.dat')
+
+
+          # Check if the request was successful
+          if response.status_code == 200:
+              with open(compressed_file_path, 'wb') as f:
+                  for chunk in response.iter_content(chunk_size=8192):
+                      f.write(chunk)
+
+              return dict(error=False, message="File Downloaded Successfully", traceback="")
+          return dict(error=True, message="Error while getting the file", traceback="")
+        return dict(error=False, message="File Already Exist", traceback="")
+
+    except Exception as e:
+        return dict(error=True, message=str(e), traceback=str(format_exc()))
 
 if __name__ == "__main__":
     app.run(debug=os.getenv('DEBUG', True))
