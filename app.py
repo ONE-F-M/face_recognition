@@ -15,7 +15,19 @@ app = Flask(__name__)
 swagger = Swagger(app)
 CORS(app, origins=os.getenv('WHITELISTED_URLS', "").split(','))
 
+save_path = os.path.join(os.getcwd(), 'shape_predictor_68_face_landmarks.dat')
+if not os.path.isfile(save_path):
+  response = requests.get('https://github.com/italojs/facial-landmarks-recognition/raw/master/shape_predictor_68_face_landmarks.dat', stream=True)
 
+  compressed_file_path = os.path.join(os.getcwd(), 'shape_predictor_68_face_landmarks.dat')
+
+  # Check if the request was successful
+  if response.status_code == 200:
+      with open(compressed_file_path, 'wb') as f:
+          for chunk in response.iter_content(chunk_size=8192):
+              f.write(chunk)
+else:
+    print("File exist")
 
 if all((not os.path.isfile("cred.json"), os.getenv("GOOGLE_CREDENTIALS", ""))):
     with open("cred.json", "w") as new_file:
