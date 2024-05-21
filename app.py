@@ -147,4 +147,4 @@ def download_file():
         return dict(error=True, message=str(e), traceback=str(format_exc()))
 
 if __name__ == "__main__":
-    app.run(debug=os.getenv('DEBUG', True), host='0.0.0.0')
+    app.run(debug=os.getenv('DEBUG', True))
