@@ -1,7 +1,7 @@
 """Gunicorn *development* config file"""
 
 # Flask WSGI application path in pattern MODULE_NAME:VARIABLE_NAME
-swgi_app = "app:app"
+wsgi_app = "app:app"
 # The granularity of Error log outputs
 loglevel = "debug"
 # The number of worker processes for handling requests
