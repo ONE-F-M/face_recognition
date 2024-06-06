@@ -434,10 +434,10 @@ class FaceRecognition:
         try:
             self.get_path()
             video_path = self.save_video()
-            status, message, traceback = self.anti_spoof_liveliness(file_path=video_path)
-            if not status:
-                os.remove(video_path) if os.path.isfile(video_path) else None
-                return True, message, traceback
+            #status, message, traceback = self.anti_spoof_liveliness(file_path=video_path)
+            #if not status:
+            #    os.remove(video_path) if os.path.isfile(video_path) else None
+            #    return True, message, traceback
 
             cap = cv2.VideoCapture(video_path)
             count = 0
@@ -515,10 +515,10 @@ class FaceRecognition:
             self.get_path()
             video_path = self.save_video()
 
-            status, message, traceback = self.anti_spoof_liveliness(file_path=video_path)
-            if not status:
-                os.remove(video_path) if os.path.isfile(video_path) else None
-                return True, message, traceback
+            #status, message, traceback = self.anti_spoof_liveliness(file_path=video_path)
+            #if not status:
+            #    os.remove(video_path) if os.path.isfile(video_path) else None
+            #    return True, message, traceback
 
             cap = cv2.VideoCapture(video_path)
 
