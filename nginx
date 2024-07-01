@@ -1,0 +1,14 @@
+server {     
+        server_name APP URL OR DOMAIN;
+        error_log  /home/frappe/face_recognition/face_recognition/error
+.log;    
+            
+        location /static/ {         
+                autoindex on;
+                alias /home/frappe/face_recognition/face_recognition/st
+atic/;     
+        }    
+        location / {         
+                include proxy_params;         
+                proxy_pass http://localhost:5000;     
+        }
