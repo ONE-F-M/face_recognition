@@ -1,12 +1,10 @@
 server {     
-        server_name APP URL OR DOMAIN;
-        error_log  /home/frappe/face_recognition/face_recognition/error
-.log;    
+        server_name APP_URL_OR_DOMAIN;
+        error_log  /home/frappe/face_recognition/face_recognition/error.log;    
             
         location /static/ {         
                 autoindex on;
-                alias /home/frappe/face_recognition/face_recognition/st
-atic/;     
+                alias /home/frappe/face_recognition/face_recognition/static/;     
         }    
         location / {         
                 include proxy_params;         
