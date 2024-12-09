@@ -1,6 +1,8 @@
 import argparse, pickle, glob, face_recognition, cv2, json, os, base64, logging, shutil, uuid
 from collections import Counter
 import joblib
+from imutils import face_utils 
+import logging
 from pathlib import Path
 from PIL import Image
 import numpy as np
@@ -244,113 +246,169 @@ class Detector:
 
 
 class AntiSpoof:
-
     def __init__(self, file_path):
-        self._face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-        self._file_path = file_path
-        Path(f"verify/anti-spoof/").mkdir(exist_ok=True)
+        try:
+            current_dir = os.getcwd()
+            # Initialize DNN face detector
+            self._face_detector = cv2.dnn.readNetFromCaffe(
+                "./models/deploy.prototxt",
+                "./models/res10_300x300_ssd_iter_140000.caffemodel"
+            )
+            self._file_path = file_path
+            Path(f"verify/anti-spoof/").mkdir(exist_ok=True)
 
-
+            # Configure logging
+            logging.basicConfig(
+                filename="antispoof_errors.log",
+                level=logging.DEBUG,
+                format="%(asctime)s [%(levelname)s] %(message)s"
+            )
+        except:
+            logging.error("Exception in detect_liveliness", exc_info=True)
+            
     def verify(self):
-        status, message, cap, traceback = self.detect_liveliness()
+        # Step 1: Check liveliness
+        status, message, cap, traceback_info = self.detect_liveliness()
+        
         if not status:
-            return status, message, traceback
+            return status, message, traceback_info
 
-        status, message, traceback = self.detect_blinks(cap=cap)
+        # Step 2: Check blinks
+        status, message, traceback_info = self.detect_blinks(cap=cap)
+        
         if not status:
-            return status, message, traceback
+            return status, message, traceback_info
 
         return True, "", ""
+    
+    def detect_faces_dnn(self, frame):
+        try:
+            h, w = frame.shape[:2]
 
+            # Convert to blob for DNN
+            blob = cv2.dnn.blobFromImage(
+                frame, scalefactor=1.0, size=(300, 300), mean=(104.0, 177.0, 123.0)
+            )
+            self._face_detector.setInput(blob)
+
+            # Get face detections
+            detections = self._face_detector.forward()
+
+            # Parse detections
+            faces = []
+            for i in range(detections.shape[2]):
+                confidence = detections[0, 0, i, 2]
+                if confidence > 0.5:  # Confidence threshold
+                    # Extract bounding box coordinates
+                    box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+                    faces.append(box.astype("int"))
+            # Return faces
+            return faces
+        except Exception as e:
+            logging.error("Exception in detect_faces_dnn", exc_info=True)
+            return []
+
+    def calculate_optical_flow(self, prev_gray, gray):
+        flow = cv2.calcOpticalFlowFarneback(
+            prev_gray, gray, None, 0.5, 3, 15, 3, 5, 1.2, 0
+        )
+        mag, _ = cv2.cartToPolar(flow[..., 0], flow[..., 1])
+        return mag.mean()
 
     def detect_liveliness(self):
         try:
-            # Initialize video capture
-
             cap = cv2.VideoCapture(self._file_path)
-
-            # Initialize frame counter
             frame_counter = 0
-
-            # Initialize variables for motion detection
-            prev_frame = None
-
+            prev_gray = None
+            motion_scores = []
+            face_positions = []
+            
             while True:
                 ret, frame = cap.read()
                 if not ret:
                     break
 
-                # Convert frame to grayscale for face detection
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                faces = self.detect_faces_dnn(frame)
+                
+                
+                if len(faces) == 0:
+                    return False, "No face detected!", None, ""
+                # Detect motion using optical flow
+               
+                if prev_gray is not None:
+                    motion_score = self.calculate_optical_flow(prev_gray, gray)
+                    motion_scores.append(motion_score)
 
-                # Detect faces in the frame
-                faces = self._face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+                # Track face position and size
+                for (x1, y1, x2, y2) in faces:
+                    face_positions.append((x1, y1, x2, y2))
 
-                # Check if faces are detected
-                if len(faces) < 1:
-                    # Face detected, liveliness check passed
-                    return False, "Oops! We could not detect a real face. Looks like your face decided to play hide and seek with the camera! 🙈", object(), ""
-
-                # Check for motion
-                if prev_frame is not None:
-                    diff_frame = cv2.absdiff(prev_frame, gray)
-                    _, thresh_frame = cv2.threshold(diff_frame, 20, 255, cv2.THRESH_BINARY)
-                    contours, _ = cv2.findContours(thresh_frame.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-                    for contour in contours:
-                        if cv2.contourArea(contour) > 100:
-                            return True, "", cap, ""
-
-                # Update previous frame
-                prev_frame = gray
-
-                # Increment frame counter
+                prev_gray = gray
                 frame_counter += 1
 
-                # Break loop if enough frames have been analyzed
+                # Skip frames for faster processing
+                if frame_counter % 5 != 0:
+                    continue
+
+                # Ensure liveliness: Check motion and face variability
+                
+                if len(motion_scores) > 10:
+                    avg_motion = np.mean(motion_scores[-10:])  # Last 10 motion scores
+                    if avg_motion < 0.2:  # Threshold for minimal motion
+                        return False, "No significant motion detected!", None, ""
+
+                    # Check face bounding box variability
+                    
+                    if len(face_positions) > 10:
+                        variances = np.var(face_positions[-10:], axis=0)
+                        if all(variance < 5 for variance in variances):  # Minimal change
+                            return False, "Face position unchanged!", None, ""
+
+                # If liveliness detected
+                if len(motion_scores) >= 20 and len(face_positions) >= 20:
+                    avg_motion = np.mean(motion_scores[-20:])
+                    variances = np.var(face_positions[-20:], axis=0)
+                    if avg_motion >= 0.2 and any(variance >= 5 for variance in variances):
+                        return True, "", cap, ""
+
                 if frame_counter >= 100:
                     return False, "Whoops! It seems you've triggered our spoof alert radar! Please ensure that your face is moving or check your camera. 🤖", object(), ""
 
-            # Release video capture
             cap.release()
             cv2.destroyAllWindows()
 
             return False, "Whoops! It seems you've triggered our spoof alert radar! Please ensure that your face is moving or check your camera. 🤖", object(), ""
         except Exception as e:
-            return False, str(e), object(), str(format_exc)
-
+            logging.error("Exception in detect_liveliness", exc_info=True)
+            return False, str(e), None, format_exc()
 
     def eye_aspect_ratio(self, eye):
-        # Compute the euclidean distances between the two sets of
-        # vertical eye landmarks (x, y)-coordinates
         A = dist.euclidean(eye[1], eye[5])
         B = dist.euclidean(eye[2], eye[4])
-
-        # Compute the euclidean distance between the horizontal
-        # eye landmark (x, y)-coordinates
         C = dist.euclidean(eye[0], eye[3])
+        return (A + B) / (C)
 
-        # Compute the eye aspect ratio
-        ear = (A + B) / (2.0 * C)
-
-        # Return the eye aspect ratio
-        return ear
-
+    def adjust_ear_threshold(self, left_ear, right_ear):
+        return min(left_ear, right_ear) * 0.8
 
     def detect_blinks(self, cap, num_blinks_required: int = 2):
         try:
             # Initialize dlib's face detector and the facial landmark predictor
             detector = dlib.get_frontal_face_detector()
             predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
+            (L_start, L_end) = face_utils.FACIAL_LANDMARKS_IDXS["left_eye"] 
+            (R_start, R_end) = face_utils.FACIAL_LANDMARKS_IDXS['right_eye'] 
 
             # Initialize blink counter
             blink_counter = 0
 
             # Initialize variables for blink detection
-            EYE_AR_THRESH = 0.27
+            
             EYE_AR_CONSEC_FRAMES = 3
             COUNTER = 0
             TOTAL = 0
+          
 
             while True:
                 ret, frame = cap.read()
@@ -359,26 +417,25 @@ class AntiSpoof:
 
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 rects = detector(gray, 0)
-
                 for rect in rects:
                     shape = predictor(gray, rect)
-                    shape = [(shape.part(i).x, shape.part(i).y) for i in range(68)]
-
-                    left_eye = shape[42:48]
-                    right_eye = shape[36:42]
-
+                    shape = face_utils.shape_to_np(shape)
+                    left_eye = shape[L_start: L_end] 
+                    right_eye = shape[R_start:R_end] 
                     left_ear = self.eye_aspect_ratio(left_eye)
                     right_ear = self.eye_aspect_ratio(right_eye)
 
                     ear = (left_ear + right_ear) / 2.0
-
+                    EYE_AR_THRESH = 0.45
                     if ear < EYE_AR_THRESH:
                         COUNTER += 1
                     else:
                         if COUNTER >= EYE_AR_CONSEC_FRAMES:
                             TOTAL += 1
-                        COUNTER = 0
-
+                        else:
+                            COUNTER = 0
+                
+                
                 if TOTAL >= num_blinks_required:
                     return True, "", ""
 
@@ -388,6 +445,8 @@ class AntiSpoof:
             return False, "Uh-oh! Blink and you'll miss it! Try blinking a bit more next time. 😉", ""
         except Exception as e:
             return False, str(e), f"{format_exc()}"
+
+    
 
 
 
@@ -399,6 +458,7 @@ class FaceRecognition:
         self._username = username
         self._type = the_type
         self._filename = filename
+        
         self._face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
         Path(f"enroll/images/{self._username}").mkdir(exist_ok=True)
         Path(f"verify/images/{self._username}").mkdir(exist_ok=True)
@@ -488,12 +548,12 @@ class FaceRecognition:
             pickle.dump(faces, new_file)
 
         # SEND FILE TO GCP in face_recognition
-        storage_client = storage.Client()
-        bucket = storage_client.bucket('face_recognition_v3')
-        blobs = storage_client.list_blobs(f'{self._bucketpath}/encoding')
-        blob = bucket.blob(f'{self._bucketpath}/encoding/{self._username}.pkl')
-        with open(pickle_file_path, 'rb') as f:
-            blob.upload_from_file(f)
+        # storage_client = storage.Client()
+        # bucket = storage_client.bucket('face_recognition_v3')
+        # blobs = storage_client.list_blobs(f'{self._bucketpath}/encoding')
+        # blob = bucket.blob(f'{self._bucketpath}/encoding/{self._username}.pkl')
+        # with open(pickle_file_path, 'rb') as f:
+        #     blob.upload_from_file(f)
 
 
         # DELETE TRAINING IMAGES
@@ -601,4 +661,4 @@ class FaceRecognition:
             anti_spoof = AntiSpoof(file_path=file_path)
             return anti_spoof.verify()
         except Exception as e:
-            return True, str(e), f"{format_exc()}"
+            return False, str(e), f"{format_exc()}"
