@@ -644,7 +644,7 @@ class FaceRecognition:
                 f"{self.IMAGEPATH}/{self._username}") else None
 
             if unrecognized >= 50:
-                return True, "Face Verification Failed", ""
+                return True, "Error 404: Face not recognized.Maybe smile a bit more?", ""
 
             if recognized > unrecognized:
                 return False, "Face verification Successful", ""
