@@ -268,6 +268,7 @@ class AntiSpoof:
             
     def verify(self):
         # Step 1: Check liveliness
+    
         status, message, cap, traceback_info = self.detect_liveliness()
         
         if not status:
@@ -446,7 +447,7 @@ class AntiSpoof:
         except Exception as e:
             return False, str(e), f"{format_exc()}"
 
-    
+
 
 
 
@@ -477,7 +478,7 @@ class FaceRecognition:
     def save_video(self) -> str:
         video_path = self.VIDEOPATH + f"/" + self._filename
         with open(video_path, 'wb') as f:
-            f.write(self._video.read())
+            f.write(base64.b64decode(self._video.read()))
 
         return video_path
 
