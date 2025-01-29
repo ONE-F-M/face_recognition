@@ -11,7 +11,11 @@ from werkzeug.utils import secure_filename
 import dlib
 from scipy.spatial import distance as dist
 from traceback import format_exc
-
+logging.basicConfig(
+                filename="antispoof_errors.log",
+                level=logging.DEBUG,
+                format="%(asctime)s [%(levelname)s] %(message)s"
+            )
 # Create directories if they don't already exist
 Path("enroll").mkdir(exist_ok=True)
 Path("verify").mkdir(exist_ok=True)
@@ -256,13 +260,6 @@ class AntiSpoof:
             )
             self._file_path = file_path
             Path(f"verify/anti-spoof/").mkdir(exist_ok=True)
-
-            # Configure logging
-            logging.basicConfig(
-                filename="antispoof_errors.log",
-                level=logging.DEBUG,
-                format="%(asctime)s [%(levelname)s] %(message)s"
-            )
         except:
             logging.error("Exception in detect_liveliness", exc_info=True)
             
@@ -453,9 +450,10 @@ class AntiSpoof:
 
 class FaceRecognition:
 
-    def __init__(self, username: str, the_type: str, filename: str, video) -> None:
+    def __init__(self, username: str, the_type: str, filename: str, video, decrypt_video: int) -> None:
         self._bucketpath = os.getenv("BUCKETPATH", "face_recognition_v3/testing/encoding")
         self._video = video
+        self._decrypt_video = decrypt_video
         self._username = username
         self._type = the_type
         self._filename = filename
@@ -478,7 +476,11 @@ class FaceRecognition:
     def save_video(self) -> str:
         video_path = self.VIDEOPATH + f"/" + self._filename
         with open(video_path, 'wb') as f:
-            f.write(base64.b64decode(self._video.read()))
+            if self._decrypt_video:
+                f.write(base64.b64decode(self._video.read()))
+            else:
+                f.write(self._video.read())
+            # f.write(base64.b64decode(self._video.read()))
 
         return video_path
 
