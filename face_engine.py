@@ -326,14 +326,24 @@ class AntiSpoof:
                 if not ret:
                     break
 
+                frame_counter += 1
+                if frame_counter <= 3:
+                    continue  # Skip first 3 frames
+
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                faces = self.detect_faces_dnn(frame)
+                
+                # Only detect faces after the first 3 frames
+                faces = self.detect_faces_dnn(frame) if frame_counter > 3 else []
+                
+                
+                logging.debug("CAFFE MODEL FACES")
+                logging.debug(faces)
                 
                 
                 if len(faces) == 0:
                     return False, "No face detected!", None, ""
+                
                 # Detect motion using optical flow
-               
                 if prev_gray is not None:
                     motion_score = self.calculate_optical_flow(prev_gray, gray)
                     motion_scores.append(motion_score)
@@ -343,21 +353,18 @@ class AntiSpoof:
                     face_positions.append((x1, y1, x2, y2))
 
                 prev_gray = gray
-                frame_counter += 1
 
                 # Skip frames for faster processing
                 if frame_counter % 5 != 0:
                     continue
 
                 # Ensure liveliness: Check motion and face variability
-                
                 if len(motion_scores) > 10:
                     avg_motion = np.mean(motion_scores[-10:])  # Last 10 motion scores
                     if avg_motion < 0.2:  # Threshold for minimal motion
                         return False, "No significant motion detected!", None, ""
 
                     # Check face bounding box variability
-                    
                     if len(face_positions) > 10:
                         variances = np.var(face_positions[-10:], axis=0)
                         if all(variance < 5 for variance in variances):  # Minimal change
@@ -380,6 +387,7 @@ class AntiSpoof:
         except Exception as e:
             logging.error("Exception in detect_liveliness", exc_info=True)
             return False, str(e), None, format_exc()
+
 
     def eye_aspect_ratio(self, eye):
         A = dist.euclidean(eye[1], eye[5])
@@ -453,7 +461,7 @@ class FaceRecognition:
     def __init__(self, username: str, the_type: str, filename: str, video, decrypt_video: int) -> None:
         self._bucketpath = os.getenv("BUCKETPATH", "face_recognition_v3/testing/encoding")
         self._video = video
-        self._decrypt_video = decrypt_video
+        self._decrypt_video = int(decrypt_video)
         self._username = username
         self._type = the_type
         self._filename = filename
