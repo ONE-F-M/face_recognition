@@ -294,6 +294,7 @@ class AntiSpoof:
 
             # Parse detections
             faces = []
+            
             for i in range(detections.shape[2]):
                 confidence = detections[0, 0, i, 2]
                 if confidence > 0.5:  # Confidence threshold
@@ -334,11 +335,7 @@ class AntiSpoof:
                 
                 # Only detect faces after the first 3 frames
                 faces = self.detect_faces_dnn(frame) if frame_counter > 3 else []
-                
-                
-                logging.debug("CAFFE MODEL FACES")
-                logging.debug(faces)
-                
+                    
                 
                 if len(faces) == 0:
                     return False, "No face detected!", None, ""
@@ -355,7 +352,7 @@ class AntiSpoof:
                 prev_gray = gray
 
                 # Skip frames for faster processing
-                if frame_counter % 5 != 0:
+                if frame_counter % 3 != 0:
                     continue
 
                 # Ensure liveliness: Check motion and face variability
@@ -465,7 +462,10 @@ class FaceRecognition:
         self._username = username
         self._type = the_type
         self._filename = filename
-        
+        self._face_detector = cv2.dnn.readNetFromCaffe(
+                "./models/deploy.prototxt",
+                "./models/res10_300x300_ssd_iter_140000.caffemodel"
+            )
         self._face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
         Path(f"enroll/images/{self._username}").mkdir(exist_ok=True)
         Path(f"verify/images/{self._username}").mkdir(exist_ok=True)
@@ -501,6 +501,36 @@ class FaceRecognition:
 
         return faces
 
+    def detect_faces_dnn(self, frame):
+        try:
+            h, w = frame.shape[:2]
+
+            # Convert to blob for DNN
+            blob = cv2.dnn.blobFromImage(
+                frame, scalefactor=1.0, size=(300, 300), mean=(104.0, 177.0, 123.0)
+            )
+            self._face_detector.setInput(blob)
+
+            # Get face detections
+            detections = self._face_detector.forward()
+
+            # Parse detections
+            faces = []
+            for i in range(detections.shape[2]):
+                confidence = detections[0, 0, i, 2]
+                if confidence > 0.5:  # Confidence threshold
+                    # Extract bounding box coordinates
+                    box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+                    faces.append(box.astype("int"))
+            # Return faces
+            return faces
+        except Exception as e:
+            logging.error("Exception in detect_faces_dnn", exc_info=True)
+            return []
+
+    
+    
+
     def enroll(self) -> tuple:
         try:
             self.get_path()
@@ -523,7 +553,7 @@ class FaceRecognition:
                     break
 
                 # Detect faces in the frame
-                faces = self.detect_faces(frame)
+                faces = self.detect_faces_dnn(frame)
 
                 for (x, y, w, h) in faces:
                     # Save the face region as an image
@@ -626,8 +656,8 @@ class FaceRecognition:
                     break
 
                 # Detect faces in the frame
-                # Make sure to implement the detect_faces method properly
-                faces = self.detect_faces(frame)
+                frame = cv2.resize(frame, (300,300))
+                faces = self.detect_faces_dnn(frame)
 
                 for (x, y, w, h) in faces:
                     # Extract face region and convert to grayscale
