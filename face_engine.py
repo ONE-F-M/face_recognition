@@ -1,5 +1,6 @@
-import argparse, pickle, glob, face_recognition, cv2, json, os, base64, logging, shutil, uuid
+import argparse, pickle,time, glob, face_recognition, cv2, json, os, base64, logging, shutil, uuid
 from collections import Counter
+from deepface import DeepFace
 import joblib
 from imutils import face_utils 
 import logging
@@ -335,7 +336,6 @@ class AntiSpoof:
                 
                 # Only detect faces after the first 3 frames
                 faces = self.detect_faces_dnn(frame) if frame_counter > 3 else []
-                    
                 
                 if len(faces) == 0:
                     return False, "No face detected!", None, ""
@@ -361,12 +361,7 @@ class AntiSpoof:
                     if avg_motion < 0.2:  # Threshold for minimal motion
                         return False, "No significant motion detected!", None, ""
 
-                    # Check face bounding box variability
-                    if len(face_positions) > 10:
-                        variances = np.var(face_positions[-10:], axis=0)
-                        if all(variance < 5 for variance in variances):  # Minimal change
-                            return False, "Face position unchanged!", None, ""
-
+                    
                 # If liveliness detected
                 if len(motion_scores) >= 20 and len(face_positions) >= 20:
                     avg_motion = np.mean(motion_scores[-20:])
@@ -544,31 +539,43 @@ class FaceRecognition:
             cap = cv2.VideoCapture(video_path)
             count = 0
 
-            output_dir = Path(self.IMAGEPATH + f"/{self._username}")
+            output_dir = Path(self.IMAGEPATH) / f"{self._username}"
             output_dir.mkdir(exist_ok=True)
-
+            img_Count = 1
             while True:
-                status, frame = cap.read()
-                if not status:
+                ret, frame = cap.read()
+                
+                if not ret:
                     break
-
-                # Detect faces in the frame
-                faces = self.detect_faces_dnn(frame)
-
-                for (x, y, w, h) in faces:
-                    # Save the face region as an image
-
-                    image_file = str(output_dir) + "/{count}.jpg".format(count=count + 1)
-
-                    face_image = frame[y:y + h, x:x + w]
-                    cv2.imwrite(image_file, face_image)
+                try:
+                    face_results = DeepFace.extract_faces(
+                        img_path=frame,
+                        enforce_detection=False
+                    ) 
+                except Exception:
+                    
+                    face_results = []  # in case of an error in detection, skip this frame
+                    return True, "An Error Occured while saving Pickle file. Please try again.", f"{format_exc()}"
+                for face_dict in face_results:
+                    
+                    facial_area = face_dict.get("facial_area")
+                    if facial_area is None:
+                        continue
+                    
+                    # Optionally resize to a fixed size for consistency.
+                    face_image=frame[facial_area.get('y'):facial_area.get('y') + facial_area.get('h'), facial_area.get('x'):facial_area.get('x') + facial_area.get('w')]
+                    image_file = output_dir / f"{count + 1}.jpg"
+                    face_image = cv2.resize(face_image, (300, 300))
+                    cv2.imwrite(str(image_file), face_image)
                     count += 1
-
-
+                    img_Count+=1
+               
+            
             cap.release()
             cv2.destroyAllWindows()
 
-            os.remove(video_path) if os.path.exists(video_path) else None
+            if os.path.exists(video_path):
+                os.remove(video_path)
 
             self.save_faces_to_pickle(images_dir=str(output_dir))
             return False, "Enrollment Successful", ""
@@ -588,15 +595,6 @@ class FaceRecognition:
         with open(pickle_file_path, 'wb') as new_file:
             pickle.dump(faces, new_file)
 
-        # SEND FILE TO GCP in face_recognition
-        # storage_client = storage.Client()
-        # bucket = storage_client.bucket('face_recognition_v3')
-        # blobs = storage_client.list_blobs(f'{self._bucketpath}/encoding')
-        # blob = bucket.blob(f'{self._bucketpath}/encoding/{self._username}.pkl')
-        # with open(pickle_file_path, 'rb') as f:
-        #     blob.upload_from_file(f)
-
-
         # DELETE TRAINING IMAGES
         shutil.rmtree(images_dir, ignore_errors=True) if os.path.exists(images_dir) else None
 
@@ -610,10 +608,14 @@ class FaceRecognition:
         # DELETE pickle
         os.remove(self.ENCODINGPATH + '/' + self._username + '.pkl') if os.path.isfile(
             self.ENCODINGPATH + '/' + self._username + '.pkl') else None
-
+    
+    
+    def cosine_similarity(self,emb1, emb2):
+        return np.dot(emb1, emb2) / (np.linalg.norm(emb1) * np.linalg.norm(emb2))
 
     def verify(self):
         try:
+            
             self.get_path()
             video_path = self.save_video()
 
@@ -621,81 +623,86 @@ class FaceRecognition:
             if not status:
                os.remove(video_path) if os.path.isfile(video_path) else None
                return True, message, traceback
-
-            cap = cv2.VideoCapture(video_path)
-
+            
+            
             # Load enrolled faces from pickle file
             if not os.path.isfile(self.ENCODINGPATH + f"/{self._username}.pkl"):
+                return True, 'Enrollment Pickle not found', '404 Enrollment Pickle not found'
                 # Download pickle file if not available locally
-                storage_client = storage.Client()
-                bucket = storage_client.bucket('face_recognition_v3')
-                blob = bucket.blob(f'{self._bucketpath}/encoding/{self._username}.pkl')
-                blob.download_to_filename(self.ENCODINGPATH + f"/{self._username}.pkl")
-
+                
             with open(self.ENCODINGPATH + f"/{self._username}.pkl", 'rb') as f:
                 enrolled_faces = pickle.load(f)
-
-            # Initialize LBPH face recognizer
-            recognizer = cv2.face.LBPHFaceRecognizer_create()
-
             # Prepare enrolled faces and labels for training
-            user_faces = enrolled_faces.get(self._username, [])
-            label_mapping = {username: i for i, username in enumerate(enrolled_faces.keys())}
-            labels_int = [label_mapping[self._username] for _ in range(len(user_faces))]
-            gray_enrolled_faces = [cv2.cvtColor(face, cv2.COLOR_BGR2GRAY) for face in user_faces]
-
-            # Train the LBPH model with enrolled faces and integer labels
-            recognizer.train(gray_enrolled_faces, np.array(labels_int))
-
-            recognized = 0
-            unrecognized = 0
-
+            user_images = enrolled_faces.get(self._username, [])
+            user_faces = []
+            img_count=0
+            for img in user_images:
+                try:
+                    # Convert images to embeddings
+                    
+                    embedding = DeepFace.represent(img, model_name="Facenet", enforce_detection=True)
+                    if not embedding:
+                        return True, "Error While processing video, Please try again", ""
+                    if embedding[0].get('face_confidence')>0.5:
+                        embedding = embedding[0]['embedding']
+                        user_faces.append(embedding)
+                        img_count+=1
+                        if img_count>9:
+                            break
+                except Exception as e:
+                    logging.error("Exception in detect_faces_dnn", exc_info=True)
+                    return True, "Error processing an image for {self._username}",e
+            
+            embed_count = 0
+            checkin_embeddings = []
+            cap = cv2.VideoCapture(video_path)
+            detected_faces = [] 
+            
             while True:
                 ret, frame = cap.read()
                 if not ret:
                     break
-
-                # Detect faces in the frame
-                frame = cv2.resize(frame, (300,300))
-                faces = self.detect_faces_dnn(frame)
-
-                for (x, y, w, h) in faces:
-                    # Extract face region and convert to grayscale
-                    face_image = cv2.cvtColor(frame[y:y + h, x:x + w], cv2.COLOR_BGR2GRAY)
-
-                    # Perform face recognition using LBPH
-                    label, confidence = recognizer.predict(face_image)
-
-
-                    # Match against enrolled faces
-                    if label != -1:  # Face recognized
-                        if confidence < 50:
-                            recognized += 1
-                        else:
-                            unrecognized += 1
-
-                        # Break out of the loop after recognizing a face
+                if embed_count>9:
+                    break
+                
+               
+                detected_faces = DeepFace.represent(frame, model_name="Facenet", enforce_detection=False)
+                if not detected_faces:
+                    
+                    return True, "Error While processing video, Please try again", ""
+                if detected_faces[0].get('face_confidence')>0.5:
+                    if embed_count>9:
                         break
+                    checkin_embedding = detected_faces[0]['embedding']
+                    checkin_embeddings.append(checkin_embedding)
+                    embed_count+=1
 
             cap.release()
             cv2.destroyAllWindows()
-
-            os.remove(video_path) if os.path.isfile(video_path) else None
-            shutil.rmtree(f"{self.IMAGEPATH}/{self._username}", ignore_errors=True) if os.path.exists(
-                f"{self.IMAGEPATH}/{self._username}") else None
-
-            if unrecognized >= 50:
+            match_count = 0
+            unmatched_count = 0
+            for checkin_emb in checkin_embeddings:
+                for stored_emb in user_faces:
+                    similarity = self.cosine_similarity(checkin_emb, stored_emb)
+                    if similarity > 0.8:
+                        match_count += 1
+                    else:
+                        unmatched_count +=1
+            
+            
+            
+            if unmatched_count >match_count:
                 return True, "Error 404: Face not recognized.Maybe smile a bit more?", ""
 
-            if recognized > unrecognized:
+            if match_count > unmatched_count:
                 return False, "Face verification Successful", ""
 
             return True, "Face Verification Failed", ""
 
         except Exception as e:
-           return True, str(e), f"{format_exc()}"
-
-
+            logging.error("Exception in detect_liveliness", exc_info=True)
+            return True, str(e), f"{format_exc()}"
+    
     @staticmethod
     def anti_spoof_liveliness(file_path: str):
         try:
