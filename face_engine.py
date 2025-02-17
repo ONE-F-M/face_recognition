@@ -523,9 +523,6 @@ class FaceRecognition:
             logging.error("Exception in detect_faces_dnn", exc_info=True)
             return []
 
-    
-    
-
     def enroll(self) -> tuple:
         try:
             self.get_path()
@@ -537,47 +534,39 @@ class FaceRecognition:
                return True, message, traceback
 
             cap = cv2.VideoCapture(video_path)
-            count = 0
-
+            framecount = 0
+            writecount = 0
+            # shutil.rmtree(f"{self.IMAGEPATH}/{self._username}", ignore_errors=True)
             output_dir = Path(self.IMAGEPATH) / f"{self._username}"
             output_dir.mkdir(exist_ok=True)
-            img_Count = 1
+            
             while True:
-                ret, frame = cap.read()
-                
-                if not ret:
-                    break
                 try:
-                    face_results = DeepFace.extract_faces(
-                        img_path=frame,
-                        enforce_detection=False
-                    ) 
-                except Exception:
-                    
-                    face_results = []  # in case of an error in detection, skip this frame
-                    return True, "An Error Occured while saving Pickle file. Please try again.", f"{format_exc()}"
-                for face_dict in face_results:
-                    
-                    facial_area = face_dict.get("facial_area")
-                    if facial_area is None:
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+                    faces = self.detect_faces_dnn(frame)
+                    if len(faces) == 0:
                         continue
-                    
-                    # Optionally resize to a fixed size for consistency.
-                    face_image=frame[facial_area.get('y'):facial_area.get('y') + facial_area.get('h'), facial_area.get('x'):facial_area.get('x') + facial_area.get('w')]
-                    image_file = output_dir / f"{count + 1}.jpg"
-                    face_image = cv2.resize(face_image, (300, 300))
-                    cv2.imwrite(str(image_file), face_image)
-                    count += 1
-                    img_Count+=1
-               
+                    else:
+                        
+                        if writecount < 5: #saving 5 images to reference vs the checkin videos, skipping the first 4 because of dark images
+                        # Optionally resize to a fixed size for consistency.
+                            image_file = self.IMAGEPATH+ '/' +f"{framecount + 1}.jpg"
+                            image_file = str(output_dir) + "/{count}.jpg".format(count=framecount + 1)
+                            face_image = cv2.resize(frame, (300, 300))
+                            cv2.imwrite(str(image_file), face_image)
+                            writecount += 1
+                        else:
+                            break  
+                        framecount += 1
+                except Exception:
+                    logging.error("Exception in detect_liveliness", exc_info=True)
             
             cap.release()
             cv2.destroyAllWindows()
-
             if os.path.exists(video_path):
                 os.remove(video_path)
-
-            self.save_faces_to_pickle(images_dir=str(output_dir))
             return False, "Enrollment Successful", ""
         except Exception as e:
             return True, str(e), f"{format_exc()}"
@@ -596,7 +585,7 @@ class FaceRecognition:
             pickle.dump(faces, new_file)
 
         # DELETE TRAINING IMAGES
-        shutil.rmtree(images_dir, ignore_errors=True) if os.path.exists(images_dir) else None
+        # shutil.rmtree(images_dir, ignore_errors=True) if os.path.exists(images_dir) else None
 
         # check if pickle exist in verify
         os.remove('verify/encoding/' + self._username + '.pkl') if os.path.isfile(
@@ -610,9 +599,8 @@ class FaceRecognition:
             self.ENCODINGPATH + '/' + self._username + '.pkl') else None
     
     
-    def cosine_similarity(self,emb1, emb2):
-        return np.dot(emb1, emb2) / (np.linalg.norm(emb1) * np.linalg.norm(emb2))
-
+   
+    
     def verify(self):
         try:
             
@@ -630,74 +618,65 @@ class FaceRecognition:
                 return True, 'Enrollment Pickle not found', '404 Enrollment Pickle not found'
                 # Download pickle file if not available locally
                 
-            with open(self.ENCODINGPATH + f"/{self._username}.pkl", 'rb') as f:
-                enrolled_faces = pickle.load(f)
-            # Prepare enrolled faces and labels for training
-            user_images = enrolled_faces.get(self._username, [])
-            user_faces = []
-            img_count=0
-            for img in user_images:
-                try:
-                    # Convert images to embeddings
-                    
-                    embedding = DeepFace.represent(img, model_name="Facenet", enforce_detection=True)
-                    if not embedding:
-                        return True, "Error While processing video, Please try again", ""
-                    if embedding[0].get('face_confidence')>0.5:
-                        embedding = embedding[0]['embedding']
-                        user_faces.append(embedding)
-                        img_count+=1
-                        if img_count>9:
-                            break
-                except Exception as e:
-                    logging.error("Exception in detect_faces_dnn", exc_info=True)
-                    return True, "Error processing an image for {self._username}",e
             
-            embed_count = 0
-            checkin_embeddings = []
+            write_count=0
+            
+            enrollment_image_folder = "enroll/images"+f"/{self._username}"
+            checkin_image_folder = "verify/images"+f"/{self._username}"
+            shutil.rmtree(checkin_image_folder, ignore_errors=True) if os.path.exists(checkin_image_folder) else None
+            Path(checkin_image_folder).mkdir(exist_ok=True)
             cap = cv2.VideoCapture(video_path)
-            detected_faces = [] 
-            
             while True:
+                if write_count>10:
+                    break
                 ret, frame = cap.read()
                 if not ret:
                     break
-                if embed_count>9:
-                    break
                 
-               
-                detected_faces = DeepFace.represent(frame, model_name="Facenet", enforce_detection=False)
-                if not detected_faces:
-                    
-                    return True, "Error While processing video, Please try again", ""
-                if detected_faces[0].get('face_confidence')>0.5:
-                    if embed_count>9:
-                        break
-                    checkin_embedding = detected_faces[0]['embedding']
-                    checkin_embeddings.append(checkin_embedding)
-                    embed_count+=1
-
+                faces = self.detect_faces_dnn(frame)
+                if len(faces) == 0:
+                    continue
+                else:
+                    if write_count>3 and write_count < 9:
+                        image_file = checkin_image_folder+ '/' +f"{write_count + 1}.jpg"
+                        face_image = cv2.resize(frame, (300, 300))
+                        cv2.imwrite(str(image_file), face_image)
+                        
+                    write_count += 1
             cap.release()
             cv2.destroyAllWindows()
             match_count = 0
             unmatched_count = 0
-            for checkin_emb in checkin_embeddings:
-                for stored_emb in user_faces:
-                    similarity = self.cosine_similarity(checkin_emb, stored_emb)
-                    if similarity > 0.8:
-                        match_count += 1
-                    else:
-                        unmatched_count +=1
+            checkin_images = [os.path.join(checkin_image_folder, img) for img in os.listdir(checkin_image_folder) if img.lower().endswith(('.jpg', '.jpeg', '.png'))]
+            enrollment_images = [os.path.join(enrollment_image_folder, img) for img in os.listdir(enrollment_image_folder) if img.lower().endswith(('.jpg', '.jpeg', '.png'))]
+            for checkin_image in checkin_images:
+                if match_count>9:
+                    break 
+                if unmatched_count>9:
+                    break                
+                for enrollment_image in enrollment_images:
+                    if match_count>9:
+                        break
+                    if unmatched_count>9:
+                        break
+                    try:
+                        result = DeepFace.verify(img1_path=checkin_image, img2_path=enrollment_image,model_name ="Dlib",enforce_detection=False)
+                        if result.get('verified'):
+                            match_count+=1
+                        else:
+                            unmatched_count+=1
+                    except Exception as e:
+                        logging.error("Exception in Verification", exc_info=True)
+                
+            # Iterate over each image in folder Fc
             
             
-            
-            if unmatched_count >match_count:
-                return True, "Error 404: Face not recognized.Maybe smile a bit more?", ""
-
             if match_count > unmatched_count:
                 return False, "Face verification Successful", ""
-
-            return True, "Face Verification Failed", ""
+            else:
+                 return True, "Error 404: Face not recognized.Maybe smile a bit more?", ""
+            
+            
 
         except Exception as e:
             logging.error("Exception in detect_liveliness", exc_info=True)
@@ -710,3 +689,5 @@ class FaceRecognition:
             return anti_spoof.verify()
         except Exception as e:
             return False, str(e), f"{format_exc()}"
+        
+        
