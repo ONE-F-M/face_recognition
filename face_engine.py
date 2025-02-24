@@ -623,7 +623,7 @@ class FaceRecognition:
             
             enrollment_image_folder = "enroll/images"+f"/{self._username}"
             checkin_image_folder = "verify/images"+f"/{self._username}"
-            shutil.rmtree(checkin_image_folder, ignore_errors=True) if os.path.exists(checkin_image_folder) else None
+            
             Path(checkin_image_folder).mkdir(exist_ok=True)
             cap = cv2.VideoCapture(video_path)
             while True:
@@ -649,6 +649,7 @@ class FaceRecognition:
             unmatched_count = 0
             checkin_images = [os.path.join(checkin_image_folder, img) for img in os.listdir(checkin_image_folder) if img.lower().endswith(('.jpg', '.jpeg', '.png'))]
             enrollment_images = [os.path.join(enrollment_image_folder, img) for img in os.listdir(enrollment_image_folder) if img.lower().endswith(('.jpg', '.jpeg', '.png'))]
+            
             for checkin_image in checkin_images:
                 if match_count>9:
                     break 
@@ -670,7 +671,8 @@ class FaceRecognition:
                 
             # Iterate over each image in folder Fc
             
-            
+            os.remove(video_path) if os.path.isfile(video_path) else None
+            shutil.rmtree(checkin_image_folder, ignore_errors=True) if os.path.exists(checkin_image_folder) else None
             if match_count > unmatched_count:
                 return False, "Face verification Successful", ""
             else:
