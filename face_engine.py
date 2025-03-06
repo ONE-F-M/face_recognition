@@ -603,7 +603,7 @@ class FaceRecognition:
     
     def verify(self):
         try:
-            
+            logging.debug("Starting VERIFY")
             self.get_path()
             video_path = self.save_video()
 
@@ -614,8 +614,10 @@ class FaceRecognition:
             
             
             # Load enrolled faces from pickle file
-            if not os.path.isfile(self.ENCODINGPATH + f"/{self._username}.pkl"):
-                return True, 'Enrollment Pickle not found', '404 Enrollment Pickle not found'
+            logging.debug('IMAGE PATH')
+            logging.debug('enroll'+'/images'+ f"/{self._username}"+ "/1.jpg")
+            if not os.path.isfile('enroll'+'/images'+ f"/{self._username}"+ "/1.jpg"):
+                return True, 'Enrollment Images not found', '404 Enrollment Images not found'
                 # Download pickle file if not available locally
                 
             
@@ -673,6 +675,7 @@ class FaceRecognition:
             
             os.remove(video_path) if os.path.isfile(video_path) else None
             shutil.rmtree(checkin_image_folder, ignore_errors=True) if os.path.exists(checkin_image_folder) else None
+            logging.debug(f"Checkin Results: MATCH COUNT: {match_count} UNMATCHED COUNT: {unmatched_count}")
             if match_count > unmatched_count:
                 return False, "Face verification Successful", ""
             else:
