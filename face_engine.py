@@ -603,7 +603,7 @@ class FaceRecognition:
     
     def verify(self):
         try:
-            logging.debug("Starting VERIFY")
+            
             self.get_path()
             video_path = self.save_video()
 
@@ -663,7 +663,8 @@ class FaceRecognition:
                     if unmatched_count>9:
                         break
                     try:
-                        result = DeepFace.verify(img1_path=checkin_image, img2_path=enrollment_image,model_name ="Dlib",enforce_detection=False)
+                        
+                        result = DeepFace.verify(img1_path=checkin_image, img2_path=enrollment_image,model_name ="Dlib",distance_metric="euclidean",detector_backend="dlib",enforce_detection=False)
                         if result.get('verified'):
                             match_count+=1
                         else:
@@ -695,4 +696,94 @@ class FaceRecognition:
         except Exception as e:
             return False, str(e), f"{format_exc()}"
         
-        
+    
+def verify_for_user(user_name):
+    enrollment_images_folder = 'enroll'+'/images'+ f"/{user_name}"
+    checkin_images_folder = 'verify'+'/images'+ f"/{user_name}"
+    for each in [enrollment_images_folder,checkin_images_folder]:
+        jpg_files = [f for f in os.listdir(each) if f.lower().endswith(".jpg")]
+        if not jpg_files:
+            print(f"No Images found in {each}")
+            return
+    match_count = 0
+    unmatched_count = 0
+    match_count_1 = 0
+    unmatched_count_1 = 0
+    match_count_2 = 0
+    unmatched_count_2 = 0
+    match_count_4 = 0
+    unmatched_count_4 = 0
+    match_count_3 = 0
+    unmatched_count_3 = 0
+    checkin_images = [os.path.join(checkin_images_folder, img) for img in os.listdir(checkin_images_folder) if img.lower().endswith(('.jpg', '.jpeg', '.png'))]
+    enrollment_images = [os.path.join(enrollment_images_folder, img) for img in os.listdir(enrollment_images_folder) if img.lower().endswith(('.jpg', '.jpeg', '.png'))]
+    
+    for checkin_image in checkin_images:
+        if match_count>9:
+            break 
+        if unmatched_count>9:
+            break                
+        for enrollment_image in enrollment_images:
+            if match_count>9:
+                break
+            if unmatched_count>9:
+                break
+            try:
+                result = DeepFace.verify(img1_path=checkin_image, img2_path=enrollment_image,model_name ="Dlib",distance_metric="euclidean",enforce_detection=False)
+                result1 = DeepFace.verify(img1_path=checkin_image, img2_path=enrollment_image,model_name ="Dlib",distance_metric="cosine",enforce_detection=False)
+                result2 = DeepFace.verify(img1_path=checkin_image, img2_path=enrollment_image,model_name ="Dlib",distance_metric="euclidean",detector_backend="dlib",enforce_detection=False)
+                result3 = DeepFace.verify(img1_path=checkin_image, img2_path=enrollment_image,model_name ="Dlib",distance_metric="euclidean",detector_backend="mtcnn",enforce_detection=False)
+                result4 = DeepFace.verify(img1_path=checkin_image, img2_path=enrollment_image,model_name ="Dlib",detector_backend="mtcnn",enforce_detection=False)
+                # logging.debug(f'See Results {result}')
+                # logging.debug(f'See Results1 {result1}')
+                # logging.debug(f'See Results2 {result2}')
+                # logging.debug(f'See Results3 {result3}')
+                # logging.debug(f'See Results4 {result4}')
+                if result.get('verified'):
+                    match_count+=1
+                else:
+                    distance = abs(result['distance']-result['threshold'])
+                    if distance < 0.03:
+                        match_count+=1
+                    else:
+                        unmatched_count+=1
+                if result1.get('verified'):
+                    match_count_1+=1
+                else:
+                    distance = abs(result1['distance']-result1['threshold'])
+                    if distance < 0.03:
+                        match_count_1+=1
+                    else:
+                        unmatched_count_1+=1
+                if result2.get('verified'):
+                    match_count_2+=1
+                else:
+                    distance = abs(result2['distance']-result2['threshold'])
+                    if distance < 0.03:
+                        match_count_2+=1
+                    else:
+                        unmatched_count_2+=1
+                if result3.get('verified'):
+                    match_count_3+=1
+                else:
+                    distance = abs(result3['distance']-result3['threshold'])
+                    if distance < 0.03:
+                        match_count_3+=1
+                    else:
+                        unmatched_count_3+=1
+                if result4.get('verified'):
+                    match_count_4+=1
+                else:
+                    distance = abs(result4['distance']-result4['threshold'])
+                    if distance < 0.03:
+                        match_count_4+=1
+                    else:
+                        unmatched_count_4+=1
+            except Exception as e:
+                logging.error("Exception in Verification", exc_info=True)
+    logging.debug(f"Checkin Results for Result : MATCH COUNT: {match_count} UNMATCHED COUNT: {unmatched_count}")
+    logging.debug(f"Checkin Results for Result 1: MATCH COUNT: {match_count_1} UNMATCHED COUNT: {unmatched_count_1}")
+    logging.debug(f"Checkin Results for Result 2: MATCH COUNT: {match_count_2} UNMATCHED COUNT: {unmatched_count_2}")
+    logging.debug(f"Checkin Results for Result 3: MATCH COUNT: {match_count_3} UNMATCHED COUNT: {unmatched_count_3}")
+    logging.debug(f"Checkin Results: for Result 4 MATCH COUNT : {match_count_4} UNMATCHED COUNT: {unmatched_count_4}")
+
