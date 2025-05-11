@@ -4,7 +4,7 @@ from traceback import format_exc
 from dotenv import load_dotenv
 from flasgger import Swagger
 from flask import Flask, request, jsonify
-from face_engine import Detector, set_credential, FaceRecognition
+from face_engine import  set_credential, FaceRecognition
 from flask_cors import CORS
 
 
