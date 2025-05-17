@@ -1,4 +1,4 @@
-import json, os, requests, bz2
+import json, os, requests, bz2,time,logging
 from traceback import format_exc
 
 from dotenv import load_dotenv
@@ -6,7 +6,11 @@ from flasgger import Swagger
 from flask import Flask, request, jsonify
 from face_engine import  set_credential, FaceRecognition
 from flask_cors import CORS
-
+logging.basicConfig(
+                filename="antispoof_errors.log",
+                level=logging.DEBUG,
+                format="%(asctime)s [%(levelname)s] %(message)s"
+            )
 
 
 load_dotenv()
@@ -88,10 +92,13 @@ def enroll():
         schema:
           $ref: '#/definitions/enroll'
     """
+    t1 = time.time()
     data = request.form.to_dict()
     video = request.files.get("video_file")
     face_recogniton = FaceRecognition(username=data["username"], the_type="enroll", filename=data["filename"], video=video, decrypt_video = data['decrypt_video'])
     error, message , traceback = face_recogniton.enroll()
+    t2 = time.time()
+    logging.debug(f"TIME TAKEN TO ENROLL: {t2-t1}")
     return dict(error=error, message=message, traceback=traceback)
 
 
@@ -129,10 +136,13 @@ def verify():
           $ref: '#/definitions/verification'
 
     """
+    t1 = time.time()
     data = request.form.to_dict()
     video = request.files.get("video_file")
     face_recogniton = FaceRecognition(username=data["username"], the_type="verify", filename=data["filename"], video=video, decrypt_video = data['decrypt_video'])
     error, message, traceback = face_recogniton.verify()
+    t2 = time.time()
+    logging.debug(f"TIME TAKEN TO CHECKIN: {t2-t1}")
     return dict(error=error, message=message, traceback=traceback)
 
 @app.route('/shape-model-download', methods=['GET'])

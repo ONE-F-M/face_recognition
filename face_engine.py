@@ -3,7 +3,7 @@ from collections import Counter
 from deepface import DeepFace
 import joblib
 from imutils import face_utils 
-import logging
+import logging,time
 from pathlib import Path
 from PIL import Image
 import numpy as np
@@ -76,7 +76,7 @@ def download_pickles(bucketpath):
 class AntiSpoof:
     def __init__(self, file_path):
         try:
-            current_dir = os.getcwd()
+            
             # Initialize DNN face detector
             self._face_detector = cv2.dnn.readNetFromCaffe(
                 "./models/deploy.prototxt",
@@ -85,18 +85,20 @@ class AntiSpoof:
             self._file_path = file_path
             Path(f"verify/anti-spoof/").mkdir(exist_ok=True)
         except:
-            logging.error("Exception in detect_liveliness", exc_info=True)
+            logging.error("Exception in Face Recognition", exc_info=True)
             
     def verify(self):
+        """
+        Check Liveliness and detect blinks
+        """
         # Step 1: Check liveliness
-    
         status, message, cap, traceback_info = self.detect_liveliness()
         
         if not status:
             return status, message, traceback_info
 
         # Step 2: Check blinks
-        status, message, traceback_info = self.detect_blinks(cap=cap)
+        status, message, traceback_info = self.detect_blinks()
         
         if not status:
             return status, message, traceback_info
@@ -146,7 +148,7 @@ class AntiSpoof:
             motion_scores = []
             face_positions = []
             face_detected_atleast_once = False
-            no_significant_motion_detected = False
+            liveliness_detected = False
             last_error = ""
             face_detected_count = 0
             while True:
@@ -159,7 +161,9 @@ class AntiSpoof:
                     continue  # Skip first 3 frames
 
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                
+                if gray.mean() < 10: #Grey Image
+                    continue
+                    
                 # Only detect faces after the first 3 frames
                 faces = self.detect_faces_dnn(frame) if frame_counter > 3 else []
                 
@@ -188,7 +192,8 @@ class AntiSpoof:
                     avg_motion = np.mean(motion_scores[-20:])
                     variances = np.var(face_positions[-20:], axis=0)
                     if avg_motion >= 0.2 and any(variance >= 5 for variance in variances):
-                        return True, "", cap, ""
+                        
+                        return True, "", None, ""
 
                 if frame_counter >= 100:
                     last_error =  "Whoops! It seems you've triggered our spoof alert radar! Please ensure that your face is moving or check your camera. 🤖"
@@ -197,9 +202,8 @@ class AntiSpoof:
             cv2.destroyAllWindows()
             if not face_detected_atleast_once:
                 return False, "No face detected!", None, ""
-            if len(motion_scores) > 10 and np.mean(motion_scores[-10:]) < 0.2:
-                return False, "No significant motion detected!", None, ""
-            return False, "Whoops! It seems you've triggered our spoof alert radar! Please ensure that your face is moving or check your camera. 🤖", object(), ""
+
+            return True, "", None, ""
         except Exception as e:
             logging.error("Exception in detect_liveliness", exc_info=True)
             return False, str(e), None, format_exc()
@@ -214,9 +218,14 @@ class AntiSpoof:
     def adjust_ear_threshold(self, left_ear, right_ear):
         return min(left_ear, right_ear) * 0.8
 
-    def detect_blinks(self, cap, num_blinks_required: int = 2):
+    def detect_blinks(self, num_blinks_required: int = 2):
+        """
+            Detect blinks in the received video
+        """
         try:
             # Initialize dlib's face detector and the facial landmark predictor
+            
+            cap = cv2.VideoCapture(self._file_path)
             detector = dlib.get_frontal_face_detector()
             predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
             (L_start, L_end) = face_utils.FACIAL_LANDMARKS_IDXS["left_eye"] 
@@ -227,18 +236,30 @@ class AntiSpoof:
 
             # Initialize variables for blink detection
             
-            EYE_AR_CONSEC_FRAMES = 3
+            EYE_AR_CONSEC_FRAMES =  1
             COUNTER = 0
             TOTAL = 0
-          
+            rotate_video = False
+            # Detect if the video needs rotation
+            width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+            height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+            if width > height:
+                rotate_video = True
+                
 
             while True:
                 ret, frame = cap.read()
+                if rotate_video:
+                    frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
                 if not ret:
                     break
 
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                if gray.mean() < 10:
+                    
+                    continue
                 rects = detector(gray, 0)
+                
                 for rect in rects:
                     shape = predictor(gray, rect)
                     shape = face_utils.shape_to_np(shape)
@@ -249,6 +270,7 @@ class AntiSpoof:
 
                     ear = (left_ear + right_ear) / 2.0
                     EYE_AR_THRESH = 0.45
+                    
                     if ear < EYE_AR_THRESH:
                         COUNTER += 1
                     else:
@@ -260,7 +282,6 @@ class AntiSpoof:
                 
                 if TOTAL >= num_blinks_required:
                     return True, "", ""
-
             cap.release()
             cv2.destroyAllWindows()
 
@@ -363,15 +384,18 @@ class FaceRecognition:
             # shutil.rmtree(f"{self.IMAGEPATH}/{self._username}", ignore_errors=True)
             output_dir = Path(self.IMAGEPATH) / f"{self._username}"
             output_dir.mkdir(exist_ok=True)
-            
+            rotate_video = False
+            if cap.get(cv2.CAP_PROP_FRAME_WIDTH) > cap.get(cv2.CAP_PROP_FRAME_HEIGHT):
+                rotate_video = True
             while True:
                 try:
                     ret, frame = cap.read()
                     if not ret:
                         break
+                    if rotate_video:
+                        frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
                     faces = self.detect_faces_dnn(frame)
                     if len(faces) == 0:
-                        
                         continue
                     else:
                         
@@ -428,21 +452,22 @@ class FaceRecognition:
     
     def verify(self):
         try:
-            
+            """
+                Verify that the video received passes the anti spoof liveliness check
+            """
             self.get_path()
             video_path = self.save_video()
 
             status, message, traceback = self.anti_spoof_liveliness(file_path=video_path)
             if not status:
-               os.remove(video_path) if os.path.isfile(video_path) else None
+            #    os.remove(video_path) if os.path.isfile(video_path) else None
                return True, message, traceback
             
             
             # Load enrolled faces from pickle file
-            logging.debug('IMAGE PATH')
-            logging.debug('enroll'+'/images'+ f"/{self._username}"+ "/1.jpg")
+            
             if not os.path.isfile('enroll'+'/images'+ f"/{self._username}"+ "/1.jpg"):
-                return True, 'Enrollment Images not found', '404 Enrollment Images not found'
+                return True, 'Enrollment Images not found', '404 Enrollment Images not found.'
                 # Download pickle file if not available locally
                 
             
@@ -457,6 +482,7 @@ class FaceRecognition:
                 if write_count>10:
                     break
                 ret, frame = cap.read()
+
                 if not ret:
                     break
                 
@@ -501,7 +527,7 @@ class FaceRecognition:
             
             os.remove(video_path) if os.path.isfile(video_path) else None
             shutil.rmtree(checkin_image_folder, ignore_errors=True) if os.path.exists(checkin_image_folder) else None
-            logging.debug(f"Checkin Results: MATCH COUNT: {match_count} UNMATCHED COUNT: {unmatched_count}")
+            
             if match_count > unmatched_count:
                 return False, "Face verification Successful", ""
             else:
@@ -510,7 +536,7 @@ class FaceRecognition:
             
 
         except Exception as e:
-            logging.error("Exception in detect_liveliness", exc_info=True)
+            logging.error("Exception while checking", exc_info=True)
             return True, str(e), f"{format_exc()}"
     
     @staticmethod
@@ -559,11 +585,7 @@ def verify_for_user(user_name):
                 result2 = DeepFace.verify(img1_path=checkin_image, img2_path=enrollment_image,model_name ="Dlib",distance_metric="euclidean",detector_backend="dlib",enforce_detection=False)
                 result3 = DeepFace.verify(img1_path=checkin_image, img2_path=enrollment_image,model_name ="Dlib",distance_metric="euclidean",detector_backend="mtcnn",enforce_detection=False)
                 result4 = DeepFace.verify(img1_path=checkin_image, img2_path=enrollment_image,model_name ="Dlib",detector_backend="mtcnn",enforce_detection=False)
-                # logging.debug(f'See Results {result}')
-                # logging.debug(f'See Results1 {result1}')
-                # logging.debug(f'See Results2 {result2}')
-                # logging.debug(f'See Results3 {result3}')
-                # logging.debug(f'See Results4 {result4}')
+                
                 if result.get('verified'):
                     match_count+=1
                 else:
