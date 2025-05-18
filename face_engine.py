@@ -515,7 +515,9 @@ class FaceRecognition:
                         break
                     try:
                         
-                        result = DeepFace.verify(img1_path=checkin_image, img2_path=enrollment_image,model_name ="Dlib",distance_metric="euclidean",detector_backend="dlib",enforce_detection=False)
+                        
+                        result = auto_threshold_verify(checkin_image,enrollment_image,model_name ="Dlib",distance_metric="euclidean",detector_backend="dlib")
+                        
                         if result.get('verified'):
                             match_count+=1
                         else:
@@ -528,7 +530,7 @@ class FaceRecognition:
             os.remove(video_path) if os.path.isfile(video_path) else None
             shutil.rmtree(checkin_image_folder, ignore_errors=True) if os.path.exists(checkin_image_folder) else None
             
-            if match_count > unmatched_count:
+            if match_count => unmatched_count:
                 return False, "Face verification Successful", ""
             else:
                  return True, "Error 404: Face not recognized.Maybe smile a bit more?", ""
@@ -546,7 +548,31 @@ class FaceRecognition:
             return anti_spoof.verify()
         except Exception as e:
             return False, str(e), f"{format_exc()}"
-        
+
+def auto_threshold_verify(img1_path, img2_path, model_name="Dlib", detector_backend=None, distance_metric="euclidean"):
+    # Base threshold for verification
+    # Perform verification
+    if not detector_backend:
+        result = DeepFace.verify(img1_path, img2_path, model_name=model_name, distance_metric=distance_metric,enforce_detection=False)
+    else:
+        result = DeepFace.verify(img1_path, img2_path, model_name=model_name, detector_backend=detector_backend, distance_metric=distance_metric,enforce_detection=False)
+    logging.debug(f"SEE RESULT: {result}")
+    if not result['verified']:
+        base_threshold = float(result.get('threshold'))
+        if not base_threshold:
+            return result
+        # Extract the distance
+        distance = float(result['distance'])
+        adjusted_threshold = float(base_threshold+0.05)
+        # Adjust threshold automatically
+        if distance > adjusted_threshold:
+            return result
+        # Set verification status based on adjusted threshold
+        result['verified'] = distance <= adjusted_threshold
+        result['adjusted_threshold'] = adjusted_threshold
+
+    return result
+
     
 def verify_for_user(user_name):
     enrollment_images_folder = 'enroll'+'/images'+ f"/{user_name}"
@@ -580,52 +606,37 @@ def verify_for_user(user_name):
             if unmatched_count>9:
                 break
             try:
-                result = DeepFace.verify(img1_path=checkin_image, img2_path=enrollment_image,model_name ="Dlib",distance_metric="euclidean",enforce_detection=False)
-                result1 = DeepFace.verify(img1_path=checkin_image, img2_path=enrollment_image,model_name ="Dlib",distance_metric="cosine",enforce_detection=False)
-                result2 = DeepFace.verify(img1_path=checkin_image, img2_path=enrollment_image,model_name ="Dlib",distance_metric="euclidean",detector_backend="dlib",enforce_detection=False)
-                result3 = DeepFace.verify(img1_path=checkin_image, img2_path=enrollment_image,model_name ="Dlib",distance_metric="euclidean",detector_backend="mtcnn",enforce_detection=False)
-                result4 = DeepFace.verify(img1_path=checkin_image, img2_path=enrollment_image,model_name ="Dlib",detector_backend="mtcnn",enforce_detection=False)
+                result = auto_threshold_verify(checkin_image,enrollment_image,model_name ="Dlib",distance_metric="euclidean")
                 
+                result1 = auto_threshold_verify(checkin_image,enrollment_image,model_name ="Dlib",distance_metric="cosine")
+                
+                result2 = auto_threshold_verify(checkin_image,enrollment_image,model_name ="Dlib",distance_metric="euclidean",detector_backend="dlib")
+               
+                result3 = auto_threshold_verify(checkin_image,enrollment_image,model_name ="Dlib",distance_metric="euclidean",detector_backend="mtcnn")
+                
+                result4 = auto_threshold_verify(checkin_image,enrollment_image,model_name ="Dlib",detector_backend="mtcnn")
+                
+               
                 if result.get('verified'):
                     match_count+=1
                 else:
-                    distance = abs(result['distance']-result['threshold'])
-                    if distance < 0.03:
-                        match_count+=1
-                    else:
-                        unmatched_count+=1
+                    unmatched_count+=1
                 if result1.get('verified'):
                     match_count_1+=1
                 else:
-                    distance = abs(result1['distance']-result1['threshold'])
-                    if distance < 0.03:
-                        match_count_1+=1
-                    else:
-                        unmatched_count_1+=1
+                    unmatched_count_1+=1
                 if result2.get('verified'):
                     match_count_2+=1
                 else:
-                    distance = abs(result2['distance']-result2['threshold'])
-                    if distance < 0.03:
-                        match_count_2+=1
-                    else:
-                        unmatched_count_2+=1
+                    unmatched_count_2+=1
                 if result3.get('verified'):
                     match_count_3+=1
                 else:
-                    distance = abs(result3['distance']-result3['threshold'])
-                    if distance < 0.03:
-                        match_count_3+=1
-                    else:
-                        unmatched_count_3+=1
+                    unmatched_count_3+=1
                 if result4.get('verified'):
                     match_count_4+=1
                 else:
-                    distance = abs(result4['distance']-result4['threshold'])
-                    if distance < 0.03:
-                        match_count_4+=1
-                    else:
-                        unmatched_count_4+=1
+                    unmatched_count_4+=1
             except Exception as e:
                 logging.error("Exception in Verification", exc_info=True)
     logging.debug(f"Checkin Results for Result : MATCH COUNT: {match_count} UNMATCHED COUNT: {unmatched_count}")
