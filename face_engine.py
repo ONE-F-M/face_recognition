@@ -530,7 +530,7 @@ class FaceRecognition:
             os.remove(video_path) if os.path.isfile(video_path) else None
             shutil.rmtree(checkin_image_folder, ignore_errors=True) if os.path.exists(checkin_image_folder) else None
             
-            if match_count => unmatched_count:
+            if match_count >= unmatched_count:
                 return False, "Face verification Successful", ""
             else:
                  return True, "Error 404: Face not recognized.Maybe smile a bit more?", ""
