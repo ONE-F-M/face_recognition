@@ -563,7 +563,7 @@ def auto_threshold_verify(img1_path, img2_path, model_name="Dlib", detector_back
             return result
         # Extract the distance
         distance = float(result['distance'])
-        adjusted_threshold = float(base_threshold+0.05)
+        adjusted_threshold = float(base_threshold+0.10)
         # Adjust threshold automatically
         if distance > adjusted_threshold:
             return result
