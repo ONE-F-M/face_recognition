@@ -236,26 +236,25 @@ class AntiSpoof:
 
             # Initialize variables for blink detection
             
-            EYE_AR_CONSEC_FRAMES =  1
+            EYE_AR_CONSEC_FRAMES =  2
             COUNTER = 0
             TOTAL = 0
             rotate_video = False
             # Detect if the video needs rotation
             width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
             height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-            if width > height:
-                rotate_video = True
-                
-
             while True:
+                framecount = 1
+                
                 ret, frame = cap.read()
-                if rotate_video:
-                    frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+                
                 if not ret:
+                    
                     break
-
+                
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                if gray.mean() < 10:
+                
+                if gray.mean() < 80:
                     
                     continue
                 rects = detector(gray, 0)
@@ -265,21 +264,31 @@ class AntiSpoof:
                     shape = face_utils.shape_to_np(shape)
                     left_eye = shape[L_start: L_end] 
                     right_eye = shape[R_start:R_end] 
-                    left_ear = self.eye_aspect_ratio(left_eye)
-                    right_ear = self.eye_aspect_ratio(right_eye)
-
-                    ear = (left_ear + right_ear) / 2.0
-                    EYE_AR_THRESH = 0.45
+                    left_eye_ratio = self.eye_aspect_ratio(left_eye)
+                    right_eye_ratio = self.eye_aspect_ratio(right_eye)
+                    #use logging to view the left,right ear and eye values
                     
-                    if ear < EYE_AR_THRESH:
+                    eye = (left_eye_ratio + right_eye_ratio) / 2.0
+                    
+                    EYE_AR_THRESH = 0.40
+                    
+                    if eye < EYE_AR_THRESH:
                         COUNTER += 1
                     else:
+                        # The eye is open again
                         if COUNTER >= EYE_AR_CONSEC_FRAMES:
+                            # A blink was detected
                             TOTAL += 1
+                            # Reset the counter
+                            COUNTER = 0
+                        # If the counter didn't meet the threshold,
+                        # it's not a blink, so we reset it to zero anyway.
                         else:
                             COUNTER = 0
                 
-                
+                    
+               
+                # If required blinks detected
                 if TOTAL >= num_blinks_required:
                     return True, "", ""
             cap.release()
@@ -385,15 +394,13 @@ class FaceRecognition:
             output_dir = Path(self.IMAGEPATH) / f"{self._username}"
             output_dir.mkdir(exist_ok=True)
             rotate_video = False
-            if cap.get(cv2.CAP_PROP_FRAME_WIDTH) > cap.get(cv2.CAP_PROP_FRAME_HEIGHT):
-                rotate_video = True
+            
             while True:
                 try:
                     ret, frame = cap.read()
                     if not ret:
                         break
-                    if rotate_video:
-                        frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+                    
                     faces = self.detect_faces_dnn(frame)
                     if len(faces) == 0:
                         continue
@@ -502,7 +509,7 @@ class FaceRecognition:
             unmatched_count = 0
             checkin_images = [os.path.join(checkin_image_folder, img) for img in os.listdir(checkin_image_folder) if img.lower().endswith(('.jpg', '.jpeg', '.png'))]
             enrollment_images = [os.path.join(enrollment_image_folder, img) for img in os.listdir(enrollment_image_folder) if img.lower().endswith(('.jpg', '.jpeg', '.png'))]
-            logging.debug(f"USER:{self._username}")
+            
             for checkin_image in checkin_images:
                 if match_count>9:
                     break 
@@ -529,7 +536,7 @@ class FaceRecognition:
             
             os.remove(video_path) if os.path.isfile(video_path) else None
             shutil.rmtree(checkin_image_folder, ignore_errors=True) if os.path.exists(checkin_image_folder) else None
-            logging.debug(f"FINAL RESULTS: MATCH: {match_count} UNMATCHED: {unmatched_count}")
+            
             if match_count >= unmatched_count:
                 return False, "Face verification Successful", ""
             else:
@@ -556,7 +563,7 @@ def auto_threshold_verify(img1_path, img2_path, model_name="Dlib", detector_back
         result = DeepFace.verify(img1_path, img2_path, model_name=model_name, distance_metric=distance_metric,enforce_detection=False)
     else:
         result = DeepFace.verify(img1_path, img2_path, model_name=model_name, detector_backend=detector_backend, distance_metric=distance_metric,enforce_detection=False)
-    logging.debug(f"SEE RESULT: {result}")
+    
     if not result['verified']:
         base_threshold = float(result.get('threshold'))
         if not base_threshold:
