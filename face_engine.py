@@ -244,7 +244,6 @@ class AntiSpoof:
             width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
             height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
             while True:
-                framecount = 1
                 
                 ret, frame = cap.read()
                 
