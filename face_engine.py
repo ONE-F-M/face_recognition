@@ -278,12 +278,8 @@ class AntiSpoof:
                         if COUNTER >= EYE_AR_CONSEC_FRAMES:
                             # A blink was detected
                             TOTAL += 1
-                            # Reset the counter
-                            COUNTER = 0
-                        # If the counter didn't meet the threshold,
-                        # it's not a blink, so we reset it to zero anyway.
-                        else:
-                            COUNTER = 0
+                        # Reset the counter in both cases
+                        COUNTER = 0
                 
                     
                
