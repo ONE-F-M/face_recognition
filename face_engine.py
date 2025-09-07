@@ -265,7 +265,7 @@ class AntiSpoof:
                     right_eye = shape[R_start:R_end] 
                     left_eye_ratio = self.eye_aspect_ratio(left_eye)
                     right_eye_ratio = self.eye_aspect_ratio(right_eye)
-                    #use logging to view the left,right ear and eye values
+                    # Use logging to view the left, right ear and eye values
                     
                     eye = (left_eye_ratio + right_eye_ratio) / 2.0
                     
