@@ -3,7 +3,7 @@ from collections import Counter
 from deepface import DeepFace
 import joblib
 from imutils import face_utils 
-import logging,time
+import logging
 from pathlib import Path
 from PIL import Image
 import numpy as np
@@ -91,14 +91,11 @@ class AntiSpoof:
         """
         Check Liveliness and detect blinks
         """
-        # Step 1: Check liveliness
-        status, message, cap, traceback_info = self.detect_liveliness()
-        
-        if not status:
-            return status, message, traceback_info
 
-        # Step 2: Check blinks
+        # Step 1: Check blinks
+        time3 = time.time()
         status, message, traceback_info = self.detect_blinks()
+        time4 = time.time()
         
         if not status:
             return status, message, traceback_info
@@ -161,7 +158,7 @@ class AntiSpoof:
                     continue  # Skip first 3 frames
 
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                if gray.mean() < 10: #Grey Image
+                if gray.mean() < 80: #Grey Image
                     continue
                     
                 # Only detect faces after the first 3 frames
@@ -459,8 +456,10 @@ class FaceRecognition:
             """
             self.get_path()
             video_path = self.save_video()
-
+            time1 = time.time()
             status, message, traceback = self.anti_spoof_liveliness(file_path=video_path)
+            time2 = time.time()
+            
             if not status:
             #    os.remove(video_path) if os.path.isfile(video_path) else None
                return True, message, traceback
@@ -480,6 +479,7 @@ class FaceRecognition:
             
             Path(checkin_image_folder).mkdir(exist_ok=True)
             cap = cv2.VideoCapture(video_path)
+            time3 = time.time()
             while True:
                 if write_count>10:
                     break
@@ -506,20 +506,17 @@ class FaceRecognition:
             enrollment_images = [os.path.join(enrollment_image_folder, img) for img in os.listdir(enrollment_image_folder) if img.lower().endswith(('.jpg', '.jpeg', '.png'))]
             
             for checkin_image in checkin_images:
-                if match_count>9:
+                if match_count>8:
                     break 
-                if unmatched_count>9:
+                if unmatched_count>8:
                     break                
                 for enrollment_image in enrollment_images:
-                    if match_count>9:
+                    if match_count>8:
                         break
-                    if unmatched_count>9:
+                    if unmatched_count>8:
                         break
                     try:
-                        
-                        
                         result = auto_threshold_verify(checkin_image,enrollment_image,model_name ="Dlib",distance_metric="euclidean",detector_backend="dlib")
-                        
                         if result.get('verified'):
                             match_count+=1
                         else:
@@ -528,6 +525,7 @@ class FaceRecognition:
                         logging.error("Exception in Verification", exc_info=True)
                 
             # Iterate over each image in folder Fc
+            time4 = time.time()
             
             os.remove(video_path) if os.path.isfile(video_path) else None
             shutil.rmtree(checkin_image_folder, ignore_errors=True) if os.path.exists(checkin_image_folder) else None
