@@ -92,7 +92,11 @@ class AntiSpoof:
         Check Liveliness and detect blinks
         """
 
-        # Step 1: Check blinks
+        # Step 1: Check blinks and liveliness
+        status, message, cap, traceback_info = self.detect_liveliness()
+        if not status:
+            return status, message, traceback_info
+        
         time3 = time.time()
         status, message, traceback_info = self.detect_blinks()
         time4 = time.time()
@@ -167,34 +171,7 @@ class AntiSpoof:
                 
                 if len(faces) > 0:
                     face_detected_atleast_once = True
-                
-                # Detect motion using optical flow
-                if prev_gray is not None:
-                    motion_score = self.calculate_optical_flow(prev_gray, gray)
-                    motion_scores.append(motion_score)
-
-                # Track face position and size
-                for (x1, y1, x2, y2) in faces:
-                    face_positions.append((x1, y1, x2, y2))
-
-                prev_gray = gray
-
-                # Skip frames for faster processing
-                if frame_counter % 3 != 0:
-                    continue
-
                     
-                # If liveliness detected
-                if len(motion_scores) >= 20 and len(face_positions) >= 20:
-                    avg_motion = np.mean(motion_scores[-20:])
-                    variances = np.var(face_positions[-20:], axis=0)
-                    if avg_motion >= 0.2 and any(variance >= 5 for variance in variances):
-                        
-                        return True, "", None, ""
-
-                if frame_counter >= 100:
-                    last_error =  "Whoops! It seems you've triggered our spoof alert radar! Please ensure that your face is moving or check your camera. 🤖"
-
             cap.release()
             cv2.destroyAllWindows()
             if not face_detected_atleast_once:
@@ -459,7 +436,7 @@ class FaceRecognition:
             time1 = time.time()
             status, message, traceback = self.anti_spoof_liveliness(file_path=video_path)
             time2 = time.time()
-            
+            logging.debug(f"Liveliness Time Taken : {time2 - time1} seconds")
             if not status:
             #    os.remove(video_path) if os.path.isfile(video_path) else None
                return True, message, traceback
@@ -504,16 +481,12 @@ class FaceRecognition:
             unmatched_count = 0
             checkin_images = [os.path.join(checkin_image_folder, img) for img in os.listdir(checkin_image_folder) if img.lower().endswith(('.jpg', '.jpeg', '.png'))]
             enrollment_images = [os.path.join(enrollment_image_folder, img) for img in os.listdir(enrollment_image_folder) if img.lower().endswith(('.jpg', '.jpeg', '.png'))]
-            
+            confidence_threshold = 5
             for checkin_image in checkin_images:
-                if match_count>8:
-                    break 
-                if unmatched_count>8:
-                    break                
+                if match_count > 8 or unmatched_count > 8 or abs(match_count - unmatched_count) >= confidence_threshold:
+                    break          
                 for enrollment_image in enrollment_images:
-                    if match_count>8:
-                        break
-                    if unmatched_count>8:
+                    if match_count > 8 or unmatched_count > 8 or abs(match_count - unmatched_count) >= confidence_threshold:
                         break
                     try:
                         result = auto_threshold_verify(checkin_image,enrollment_image,model_name ="Dlib",distance_metric="euclidean",detector_backend="dlib")
@@ -526,7 +499,7 @@ class FaceRecognition:
                 
             # Iterate over each image in folder Fc
             time4 = time.time()
-            
+            logging.debug(f"Verification Time Taken : {time4 - time3} seconds")
             os.remove(video_path) if os.path.isfile(video_path) else None
             shutil.rmtree(checkin_image_folder, ignore_errors=True) if os.path.exists(checkin_image_folder) else None
             

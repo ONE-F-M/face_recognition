@@ -10,3 +10,5 @@ cred.json
 .idea
 *.bz2
 *.dat
+bin/
+lib/
