@@ -20,6 +20,7 @@ logging.basicConfig(
 # Create directories if they don't already exist
 Path("enroll").mkdir(exist_ok=True)
 Path("verify").mkdir(exist_ok=True)
+Path("error_cases").mkdir(exist_ok=True)
 Path("enroll/images").mkdir(exist_ok=True)
 Path("enroll/video").mkdir(exist_ok=True)
 Path("enroll/encoding").mkdir(exist_ok=True)
@@ -74,7 +75,7 @@ def download_pickles(bucketpath):
 
 
 class AntiSpoof:
-    def __init__(self, file_path):
+    def __init__(self, file_path,username=None):
         try:
             
             # Initialize DNN face detector
@@ -83,9 +84,25 @@ class AntiSpoof:
                 "./models/res10_300x300_ssd_iter_140000.caffemodel"
             )
             self._file_path = file_path
+            self.username = username
             Path(f"verify/anti-spoof/").mkdir(exist_ok=True)
         except:
             logging.error("Exception in Face Recognition", exc_info=True)
+
+    def save_error_video(self):
+        try:
+            username = self.username if self.username else "unknown"
+            error_dir = Path("error_cases") / username
+            error_dir.mkdir(parents=True, exist_ok=True)
+            
+            filename = os.path.basename(self._file_path)
+            destination = error_dir / filename
+            
+            shutil.copy2(self._file_path, destination)
+            return str(destination)
+        except Exception as e:
+            logging.error(f"Failed to save error video: {e}", exc_info=True)
+            return None
             
     def verify(self):
         """
@@ -175,11 +192,13 @@ class AntiSpoof:
             cap.release()
             cv2.destroyAllWindows()
             if not face_detected_atleast_once:
+                self.save_error_video()
                 return False, "No face detected!", None, ""
 
             return True, "", None, ""
         except Exception as e:
             logging.error("Exception in detect_liveliness", exc_info=True)
+            self.save_error_video()
             return False, str(e), None, format_exc()
 
 
@@ -262,9 +281,10 @@ class AntiSpoof:
                     return True, "", ""
             cap.release()
             cv2.destroyAllWindows()
-
+            self.save_error_video()
             return False, "Uh-oh! Blink and you'll miss it! Try blinking a bit more next time. 😉", ""
         except Exception as e:
+            self.save_error_video()
             return False, str(e), f"{format_exc()}"
 
 
@@ -348,10 +368,11 @@ class FaceRecognition:
 
     def enroll(self) -> tuple:
         try:
+            logging.debug("Starting Enrollment Process")
             self.get_path()
             video_path = self.save_video()
             
-            status, message, traceback = self.anti_spoof_liveliness(file_path=video_path)
+            status, message, traceback = self.anti_spoof_liveliness(file_path=video_path,username=self._username)
             if not status:
                os.remove(video_path) if os.path.isfile(video_path) else None
                return True, message, traceback
@@ -434,7 +455,7 @@ class FaceRecognition:
             self.get_path()
             video_path = self.save_video()
             time1 = time.time()
-            status, message, traceback = self.anti_spoof_liveliness(file_path=video_path)
+            status, message, traceback = self.anti_spoof_liveliness(file_path=video_path,username=self._username)
             time2 = time.time()
             logging.debug(f"Liveliness Time Taken : {time2 - time1} seconds")
             if not status:
@@ -515,9 +536,9 @@ class FaceRecognition:
             return True, str(e), f"{format_exc()}"
     
     @staticmethod
-    def anti_spoof_liveliness(file_path: str):
+    def anti_spoof_liveliness(file_path: str,username: str):
         try:
-            anti_spoof = AntiSpoof(file_path=file_path)
+            anti_spoof = AntiSpoof(file_path=file_path,username=username)
             return anti_spoof.verify()
         except Exception as e:
             return False, str(e), f"{format_exc()}"
