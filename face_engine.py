@@ -229,7 +229,7 @@ class AntiSpoof:
 
             # Initialize variables for blink detection
             
-            EYE_AR_CONSEC_FRAMES =  2
+            EYE_AR_CONSEC_FRAMES =  1
             COUNTER = 0
             TOTAL = 0
             rotate_video = False
@@ -567,7 +567,15 @@ def auto_threshold_verify(img1_path, img2_path, model_name="Dlib", detector_back
 
     return result
 
-    
+
+def test_blinks_antispoof(file_path):
+    try:
+        anti_spoof = AntiSpoof(file_path=file_path)
+        anti_spoof.verify() 
+    except Exception as e:  
+        return False, str(e), f"{format_exc()}"
+
+
 def verify_for_user(user_name):
     enrollment_images_folder = 'enroll'+'/images'+ f"/{user_name}"
     checkin_images_folder = 'verify'+'/images'+ f"/{user_name}"
