@@ -111,11 +111,13 @@ class AntiSpoof:
 
         # Step 1: Check blinks and liveliness
         status, message, cap, traceback_info = self.detect_liveliness()
+        
         if not status:
             return status, message, traceback_info
         
         time3 = time.time()
         status, message, traceback_info = self.detect_blinks()
+        
         time4 = time.time()
         
         if not status:
@@ -178,9 +180,20 @@ class AntiSpoof:
                 if frame_counter <= 3:
                     continue  # Skip first 3 frames
 
+                
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                if gray.mean() < 80: #Grey Image
+
+                # --- SPEED OPTIMIZATION START ---
+
+                # 1. Subsample: Take every 4th pixel (rows and cols). 
+                # This reduces a 1920x1080 image to roughly 480x270, making calculations 16x faster.
+                small_gray = gray[::4, ::4] 
+
+                # 2. Check the 95th percentile of the SMALL image
+                # If the brightest 5% of the image is still dark (< 70), skip it.
+                if np.percentile(small_gray, 95) < 70:
                     continue
+
                     
                 # Only detect faces after the first 3 frames
                 faces = self.detect_faces_dnn(frame) if frame_counter > 3 else []
@@ -211,79 +224,117 @@ class AntiSpoof:
     def adjust_ear_threshold(self, left_ear, right_ear):
         return min(left_ear, right_ear) * 0.8
 
-    def detect_blinks(self, num_blinks_required: int = 2):
+    def collect_ear_values(self):
         """
-            Detect blinks in the received video
+        Scans the video to collect Eye Aspect Ratio (EAR) values for each frame.
+        Returns a list of EAR values.
         """
+        ear_values = []
         try:
-            # Initialize dlib's face detector and the facial landmark predictor
-            
             cap = cv2.VideoCapture(self._file_path)
             detector = dlib.get_frontal_face_detector()
             predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
-            (L_start, L_end) = face_utils.FACIAL_LANDMARKS_IDXS["left_eye"] 
-            (R_start, R_end) = face_utils.FACIAL_LANDMARKS_IDXS['right_eye'] 
-
-            # Initialize blink counter
-            blink_counter = 0
-
-            # Initialize variables for blink detection
+            (L_start, L_end) = face_utils.FACIAL_LANDMARKS_IDXS["left_eye"]
+            (R_start, R_end) = face_utils.FACIAL_LANDMARKS_IDXS['right_eye']
             
-            EYE_AR_CONSEC_FRAMES =  1
-            COUNTER = 0
-            TOTAL = 0
-            rotate_video = False
-            # Detect if the video needs rotation
-            width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-            height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
             while True:
-                
                 ret, frame = cap.read()
-                
                 if not ret:
-                    
                     break
                 
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                
-                if gray.mean() < 80:
-                    
+                small_gray = gray[::4, ::4] 
+                if np.percentile(small_gray, 95) < 70:
                     continue
                 rects = detector(gray, 0)
                 
-                for rect in rects:
+                # If multiple faces, we might need to be careful, but assuming single user for now
+                if len(rects) > 0:
+                    rect = rects[0] # Take the first face
                     shape = predictor(gray, rect)
                     shape = face_utils.shape_to_np(shape)
-                    left_eye = shape[L_start: L_end] 
-                    right_eye = shape[R_start:R_end] 
+                    left_eye = shape[L_start: L_end]
+                    right_eye = shape[R_start:R_end]
                     left_eye_ratio = self.eye_aspect_ratio(left_eye)
                     right_eye_ratio = self.eye_aspect_ratio(right_eye)
-                    # Use logging to view the left, right ear and eye values
                     
                     eye = (left_eye_ratio + right_eye_ratio) / 2.0
-                    
-                    EYE_AR_THRESH = 0.40
-                    
-                    if eye < EYE_AR_THRESH:
-                        COUNTER += 1
-                    else:
-                        # The eye is open again
-                        if COUNTER >= EYE_AR_CONSEC_FRAMES:
-                            # A blink was detected
-                            TOTAL += 1
-                        # Reset the counter in both cases
-                        COUNTER = 0
-                
-                    
-               
-                # If required blinks detected
-                if TOTAL >= num_blinks_required:
-                    return True, "", ""
+                    ear_values.append(eye)
+            
             cap.release()
-            cv2.destroyAllWindows()
-            self.save_error_video()
-            return False, "Uh-oh! Blink and you'll miss it! Try blinking a bit more next time. 😉", ""
+            return ear_values
         except Exception as e:
+            logging.error(f"Error collecting EAR values: {e}", exc_info=True)
+            return []
+
+    def calculate_dynamic_threshold(self, ear_values):
+        """
+        Calculates a dynamic EAR threshold based on the collected values.
+        """
+        if not ear_values:
+            return 0.30 # Fallback default
+        
+        # We assume the user's eyes are open most of the time.
+        # The 90th percentile gives a good approximation of the "open" state.
+        import numpy as np
+        open_ear = np.percentile(ear_values, 90)
+        
+        # If open_ear is suspiciously low, they might be squinting or far away.
+        # But we trust the relative drop.
+        
+        # A blink is usually a significant drop.
+        # Let's say 25% drop from open state.
+        threshold = open_ear - 0.08  # Absolute drop, or use percentage: open_ear * 0.75
+        
+        # Clamp threshold to reasonable limits to avoid false positives/negatives in edge cases
+        # min 0.18, max 0.35
+        threshold = max(0.18, min(threshold, 0.35))
+        
+        logging.debug(f"Dynamic Threshold Calculated: Open EAR={open_ear:.3f}, Threshold={threshold:.3f}")
+        return threshold
+
+    def detect_blinks(self, num_blinks_required: int = 2):
+        """
+        Detect blinks in the received video using dynamic thresholding.
+        """
+        try:
+            # Step 1: Collect EAR values from the whole video
+            ear_values = self.collect_ear_values()
+            
+            if len(ear_values) < 2: # Too short or no faces
+                 return False, " Please go to a bright area. Unable to detect enough face frames for analysis.", ""
+
+            # Step 2: Calculate Dynamic Threshold
+            EYE_AR_THRESH = self.calculate_dynamic_threshold(ear_values)
+            OLD_EYE_AR_THRESH = 0.40
+            
+            # Step 3: Count Blinks
+            EYE_AR_CONSEC_FRAMES = 1
+            COUNTER = 0
+            TOTAL = 0
+           
+            for eye in ear_values:
+                logging.debug(f"Eye Aspect Ratio: {eye:.3f}, Threshold: {EYE_AR_THRESH:.3f}")
+                if eye < EYE_AR_THRESH:
+                    COUNTER += 1
+                else:
+                    # The eye is open again
+                    if COUNTER >= EYE_AR_CONSEC_FRAMES:
+                        # A blink was detected
+                        TOTAL += 1
+                    # Reset the counter
+                    COUNTER = 0
+            
+            logging.info(f"Blinks Detected for {self.username}: {TOTAL}, Required: {num_blinks_required}, Threshold: {EYE_AR_THRESH}")
+
+            if TOTAL >= num_blinks_required:
+                return True, "", ""
+                
+            self.save_error_video()
+            return False, f"Blinks detected: {TOTAL}. Please blink at least {num_blinks_required} times. Please ensure you are in a well-lit environment", ""
+            
+        except Exception as e:
+            logging.error("Exception in detect_blinks", exc_info=True)
             self.save_error_video()
             return False, str(e), f"{format_exc()}"
 
@@ -522,7 +573,7 @@ class FaceRecognition:
             time4 = time.time()
             logging.debug(f"Verification Time Taken : {time4 - time3} seconds")
             os.remove(video_path) if os.path.isfile(video_path) else None
-            shutil.rmtree(checkin_image_folder, ignore_errors=True) if os.path.exists(checkin_image_folder) else None
+            # shutil.rmtree(checkin_image_folder, ignore_errors=True) if os.path.exists(checkin_image_folder) else None
             
             if match_count >= unmatched_count:
                 return False, "Face verification Successful", ""
@@ -551,6 +602,7 @@ def auto_threshold_verify(img1_path, img2_path, model_name="Dlib", detector_back
     else:
         result = DeepFace.verify(img1_path, img2_path, model_name=model_name, detector_backend=detector_backend, distance_metric=distance_metric,enforce_detection=False)
     
+    logging.debug(f"Verification Result: {result}")
     if not result['verified']:
         base_threshold = float(result.get('threshold'))
         if not base_threshold:
