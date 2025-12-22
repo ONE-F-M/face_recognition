@@ -246,8 +246,11 @@ class AntiSpoof:
                 small_gray = gray[::4, ::4] 
                 if np.percentile(small_gray, 95) < 70:
                     continue
-                rects = detector(gray, 0)
-                
+                dnn_faces = self.detect_faces_dnn(frame)
+                rects = []
+                for box in dnn_faces:
+                     rects.append(dlib.rectangle(int(box[0]), int(box[1]), int(box[2]), int(box[3])))
+
                 # If multiple faces, we might need to be careful, but assuming single user for now
                 if len(rects) > 0:
                     rect = rects[0] # Take the first face
@@ -268,30 +271,22 @@ class AntiSpoof:
             return []
 
     def calculate_dynamic_threshold(self, ear_values):
-        """
-        Calculates a dynamic EAR threshold based on the collected values.
-        """
         if not ear_values:
-            return 0.30 # Fallback default
+            return 0.30
         
-        # We assume the user's eyes are open most of the time.
-        # The 90th percentile gives a good approximation of the "open" state.
         import numpy as np
+        # 1. Establish the "Open Eye" baseline (90th percentile)
         open_ear = np.percentile(ear_values, 90)
         
-        # If open_ear is suspiciously low, they might be squinting or far away.
-        # But we trust the relative drop.
+        # 2. Define a blink as 25% closure from the open state
+        # This works whether their open eyes are 0.30 or 0.70
+        threshold = open_ear * 0.75 
         
-        # A blink is usually a significant drop.
-        # Let's say 25% drop from open state.
-        threshold = open_ear - 0.08  # Absolute drop, or use percentage: open_ear * 0.75
-        
-        # Clamp threshold to reasonable limits to avoid false positives/negatives in edge cases
-        # min 0.18, max 0.35
-        threshold = max(0.18, min(threshold, 0.35))
-        
-        logging.debug(f"Dynamic Threshold Calculated: Open EAR={open_ear:.3f}, Threshold={threshold:.3f}")
+        # 3. Only clamp the bottom to prevent noise (e.g. < 0.15 is practically impossible)
+        # Remove the upper clamp (min) entirely.
+        threshold = max(0.15, threshold)
         return threshold
+
 
     def detect_blinks(self, num_blinks_required: int = 2):
         """
@@ -306,15 +301,13 @@ class AntiSpoof:
 
             # Step 2: Calculate Dynamic Threshold
             EYE_AR_THRESH = self.calculate_dynamic_threshold(ear_values)
-            OLD_EYE_AR_THRESH = 0.40
-            
+
             # Step 3: Count Blinks
             EYE_AR_CONSEC_FRAMES = 1
             COUNTER = 0
             TOTAL = 0
            
             for eye in ear_values:
-                logging.debug(f"Eye Aspect Ratio: {eye:.3f}, Threshold: {EYE_AR_THRESH:.3f}")
                 if eye < EYE_AR_THRESH:
                     COUNTER += 1
                 else:
@@ -325,8 +318,8 @@ class AntiSpoof:
                     # Reset the counter
                     COUNTER = 0
             
-            logging.info(f"Blinks Detected for {self.username}: {TOTAL}, Required: {num_blinks_required}, Threshold: {EYE_AR_THRESH}")
-
+            logging.debug(f"Blinks Detected for {self.username}: {TOTAL}, Required: {num_blinks_required}, Threshold: {EYE_AR_THRESH}")
+            
             if TOTAL >= num_blinks_required:
                 return True, "", ""
                 
@@ -622,7 +615,12 @@ def auto_threshold_verify(img1_path, img2_path, model_name="Dlib", detector_back
 
 def test_blinks_antispoof(file_path):
     try:
-        anti_spoof = AntiSpoof(file_path=file_path)
+        name = file_path.split('/')
+        if name:
+            name = name[len(name)-1]
+        else:
+            name = "Test User"
+        anti_spoof = AntiSpoof(file_path=file_path,username=name)
         anti_spoof.verify() 
     except Exception as e:  
         return False, str(e), f"{format_exc()}"
