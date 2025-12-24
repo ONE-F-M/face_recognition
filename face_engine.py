@@ -92,13 +92,23 @@ class AntiSpoof:
     def save_error_video(self):
         try:
             username = self.username if self.username else "unknown"
+            # Sanitize username to remove file extension if present to avoid FileExistsError
+            # e.g. "abdullah@one-fm.com.mp4" -> "abdullah@one-fm.com"
+            if username.lower().endswith(('.mp4', '.avi', '.mov', '.mkv')):
+                username = os.path.splitext(username)[0]
+                
             error_dir = Path("error_cases") / username
             error_dir.mkdir(parents=True, exist_ok=True)
             
             filename = os.path.basename(self._file_path)
             destination = error_dir / filename
             
-            shutil.copy2(self._file_path, destination)
+            try:
+                shutil.copy2(self._file_path, destination)
+            except shutil.SameFileError:
+                logging.warning(f"Source and destination are the same file: {destination}")
+                pass # It's already there, so success
+            
             return str(destination)
         except Exception as e:
             logging.error(f"Failed to save error video: {e}", exc_info=True)
@@ -224,114 +234,203 @@ class AntiSpoof:
     def adjust_ear_threshold(self, left_ear, right_ear):
         return min(left_ear, right_ear) * 0.8
 
+
+    def get_robust_threshold(self, ear_values):
+        """
+        Calculates a threshold that adapts to 'Normal', 'High-Angle', 
+        and 'Extreme-Angle' profiles. 
+        Adjusted to capture shallow blinks in extreme angles.
+        """
+        if not ear_values:
+            return 0.25
+
+        # Use Median to find the "resting" state
+        median_ear = np.median(ear_values)
+        logging.debug(f"User Median EAR: {median_ear:.4f}")
+
+        # --- VALIDATION: CLOSED EYES ---
+        if median_ear < 0.20:
+            raise ValueError("EYES_CLOSED")
+
+        # --- VALIDATION: IMPOSSIBLE GEOMETRY ---
+        if median_ear > 0.85:
+            raise ValueError("HIGH_ANGLE_EXTREME")
+
+        # --- TIER 1: EXTREME ANGLE PROFILE (> 0.55) ---
+        # Case: s.selvaraj (0.68) and abdullah (0.56)
+        if median_ear > 0.55:
+            logging.debug("Extreme-Angle profile detected.")
+            
+            # INCREASED MULTIPLIER: 0.88 -> 0.90
+            # This captures blinks that only dip slightly (e.g., 0.50) 
+            # while keeping the threshold safely below the median.
+            threshold = median_ear * 0.90
+            
+            # RELAXED CLAMP: Allow threshold up to 0.60
+            threshold = min(threshold, 0.60)
+
+        # --- TIER 2: HIGH ANGLE PROFILE (> 0.42) ---
+        # Case: mr_s (0.45)
+        elif median_ear > 0.42:
+            logging.debug("High-Angle profile detected.")
+            
+            # Standard High Angle Multiplier
+            threshold = median_ear * 0.80
+            
+            # Strict Clamp for this tier
+            threshold = min(threshold, 0.40)
+
+        # --- TIER 3: NORMAL PROFILE ---
+        else:
+            logging.debug("Normal profile detected.")
+            # Strict logic for normal webcam/selfie usage
+            threshold = median_ear * 0.70
+            
+            # Strict Clamp
+            threshold = min(threshold, 0.32)
+
+        # Safety Floor: Physically impossible to blink above 0.18 usually
+        threshold = max(0.18, threshold)
+        
+        return threshold
+
+
+    def smooth_ear_values(self, ear_values, window_size=5):
+        if not ear_values or len(ear_values) < window_size:
+            return ear_values
+        
+        smoothed = []
+        for i in range(len(ear_values)):
+            start_idx = max(0, i - window_size + 1)
+            window = ear_values[start_idx : i + 1]
+            smoothed.append(sum(window) / len(window))
+        return smoothed
+
     def collect_ear_values(self):
         """
-        Scans the video to collect Eye Aspect Ratio (EAR) values for each frame.
-        Returns a list of EAR values.
+        Scans the video to collect Eye Aspect Ratio (EAR) values.
+        Uses CLAHE to enhance contrast for dark videos/skin tones.
         """
         ear_values = []
         try:
             cap = cv2.VideoCapture(self._file_path)
-            detector = dlib.get_frontal_face_detector()
+            
+            # Initialize predictor
             predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
             (L_start, L_end) = face_utils.FACIAL_LANDMARKS_IDXS["left_eye"]
             (R_start, R_end) = face_utils.FACIAL_LANDMARKS_IDXS['right_eye']
             
+            # Initialize CLAHE (Contrast Enhancement)
+            # This fixes the issue where dark faces were ignored
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+
             while True:
                 ret, frame = cap.read()
                 if not ret:
                     break
                 
+                # 1. Convert to Gray
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                small_gray = gray[::4, ::4] 
-                if np.percentile(small_gray, 95) < 70:
-                    continue
+                
+                # 2. ENHANCE the image
+                # This makes eye landmarks visible even in poor lighting
+                enhanced_gray = clahe.apply(gray)
+
+                # 3. Detect Faces (using DNN on original frame)
                 dnn_faces = self.detect_faces_dnn(frame)
+                
                 rects = []
                 for box in dnn_faces:
                      rects.append(dlib.rectangle(int(box[0]), int(box[1]), int(box[2]), int(box[3])))
 
-                # If multiple faces, we might need to be careful, but assuming single user for now
                 if len(rects) > 0:
-                    rect = rects[0] # Take the first face
-                    shape = predictor(gray, rect)
+                    rect = rects[0]
+                    
+                    # 4. Predict Landmarks using the ENHANCED image
+                    shape = predictor(enhanced_gray, rect)
                     shape = face_utils.shape_to_np(shape)
+                    
                     left_eye = shape[L_start: L_end]
                     right_eye = shape[R_start:R_end]
-                    left_eye_ratio = self.eye_aspect_ratio(left_eye)
-                    right_eye_ratio = self.eye_aspect_ratio(right_eye)
                     
-                    eye = (left_eye_ratio + right_eye_ratio) / 2.0
-                    ear_values.append(eye)
+                    left_ear = self.eye_aspect_ratio(left_eye)
+                    right_ear = self.eye_aspect_ratio(right_eye)
+                    
+                    # Average the eyes
+                    ear_values.append((left_ear + right_ear) / 2.0)
             
             cap.release()
             return ear_values
+            
         except Exception as e:
             logging.error(f"Error collecting EAR values: {e}", exc_info=True)
             return []
 
-    def calculate_dynamic_threshold(self, ear_values):
-        if not ear_values:
-            return 0.30
-        
-        import numpy as np
-        # 1. Establish the "Open Eye" baseline (90th percentile)
-        open_ear = np.percentile(ear_values, 90)
-        
-        # 2. Define a blink as 25% closure from the open state
-        # This works whether their open eyes are 0.30 or 0.70
-        threshold = open_ear * 0.75 
-        
-        # 3. Only clamp the bottom to prevent noise (e.g. < 0.15 is practically impossible)
-        # Remove the upper clamp (min) entirely.
-        threshold = max(0.15, threshold)
-        return threshold
-
+    
 
     def detect_blinks(self, num_blinks_required: int = 2):
         """
-        Detect blinks in the received video using dynamic thresholding.
+        Detect blinks using smoothed data and robust thresholding.
         """
         try:
-            # Step 1: Collect EAR values from the whole video
-            ear_values = self.collect_ear_values()
+            # Step 1: Collect Raw Data
+            raw_ear_values = self.collect_ear_values()
             
-            if len(ear_values) < 2: # Too short or no faces
-                 return False, " Please go to a bright area. Unable to detect enough face frames for analysis.", ""
+            # Step 2: Smooth Data (Crucial for removing camera noise)
+            smoothed_values = self.smooth_ear_values(raw_ear_values)
+            
+            if len(smoothed_values) < 10:
+                 return False, "Video too short or face not detected.", ""
 
-            # Step 2: Calculate Dynamic Threshold
-            EYE_AR_THRESH = self.calculate_dynamic_threshold(ear_values)
-
-            # Step 3: Count Blinks
-            EYE_AR_CONSEC_FRAMES = 1
-            COUNTER = 0
-            TOTAL = 0
-           
-            for eye in ear_values:
-                if eye < EYE_AR_THRESH:
-                    COUNTER += 1
+            # Step 3: Calculate Threshold & Validate
+            try:
+                threshold = self.get_robust_threshold(smoothed_values)
+            except ValueError as e:
+                self.save_error_video()
+                err_type = str(e)
+                if err_type == "EYES_CLOSED":
+                    return False, "Eyes appear closed or squinting. Please open your eyes wide.", ""
+                elif err_type == "HIGH_ANGLE_EXTREME":
+                    return False, "Camera too close or angled too low. Please hold phone at eye level.", ""
                 else:
-                    # The eye is open again
-                    if COUNTER >= EYE_AR_CONSEC_FRAMES:
-                        # A blink was detected
-                        TOTAL += 1
-                    # Reset the counter
-                    COUNTER = 0
+                    return False, "Unable to analyze eye movement.", ""
+
+            logging.debug(f"Blinks Detected Config - Threshold: {threshold:.4f}")
+
+            # Step 4: Count Blinks
+            # (Cleaned up loop: Removed double-counting logic)
+            blink_count = 0
+            consecutive_frames = 0
+            CONSEC_FRAMES_REQUIRED = 2 # 
             
-            logging.debug(f"Blinks Detected for {self.username}: {TOTAL}, Required: {num_blinks_required}, Threshold: {EYE_AR_THRESH}")
+            # Hysteresis flag
+            in_blink = False 
+           
+            for eye in smoothed_values:
+                
+                
+                if eye < threshold:
+                    consecutive_frames += 1
+                    
+                    if consecutive_frames >= CONSEC_FRAMES_REQUIRED :
+                        blink_count += 1
+                        in_blink = True # Mark that we have counted this blink
+                else:
+                    consecutive_frames = 0
+                    in_blink = False # Reset flag when eye opens
+
+            logging.debug(f"Final Blink Count for {self.username}: {blink_count} (Required: {num_blinks_required})")
             
-            if TOTAL >= num_blinks_required:
+            if blink_count >= num_blinks_required:
                 return True, "", ""
                 
             self.save_error_video()
-            return False, f"Blinks detected: {TOTAL}. Please blink at least {num_blinks_required} times. Please ensure you are in a well-lit environment", ""
+            return False, f"Blinks detected: {blink_count}. Please blink at least {num_blinks_required} times.", ""
             
         except Exception as e:
             logging.error("Exception in detect_blinks", exc_info=True)
             self.save_error_video()
             return False, str(e), f"{format_exc()}"
-
-
 
 
 
@@ -595,7 +694,7 @@ def auto_threshold_verify(img1_path, img2_path, model_name="Dlib", detector_back
     else:
         result = DeepFace.verify(img1_path, img2_path, model_name=model_name, detector_backend=detector_backend, distance_metric=distance_metric,enforce_detection=False)
     
-    logging.debug(f"Verification Result: {result}")
+
     if not result['verified']:
         base_threshold = float(result.get('threshold'))
         if not base_threshold:
@@ -621,7 +720,7 @@ def test_blinks_antispoof(file_path):
         else:
             name = "Test User"
         anti_spoof = AntiSpoof(file_path=file_path,username=name)
-        anti_spoof.verify() 
+        return anti_spoof.verify()
     except Exception as e:  
         return False, str(e), f"{format_exc()}"
 
